@@ -1,0 +1,12 @@
+[submodule "submodules/catch"]
+	path = submodules/catch
+	url = https://github.com/catchorg/Catch2.git
+	ignore = dirty
+[submodule "submodules/parallel-hashmap"]
+	path = submodules/parallel-hashmap
+	url = https://github.com/greg7mdp/parallel-hashmap.git
+	ignore = dirty
+[submodule "submodules/paw"]
+	path = submodules/paw
+	url = https://github.com/hannespetur/paw.git
+	ignore = dirty
