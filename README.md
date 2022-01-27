@@ -1,6 +1,6 @@
 ## popVCF
 
-popVCF losslessly encodes a multi sample VCF to reduce disk footprint. VCF fields are encoded by pointing to other identical fields in the same row. popVCF provives no benefits on a single sample VCF, and very little benefits until the VCF contains at least 100 sample or so.
+popVCF losslessly encodes a multi sample VCF to reduce disk footprint. VCF fields are encoded by pointing to other identical fields in the same row. popVCF provives no benefits on a single sample VCF, and very little benefits until the VCF contains at least 100 samples or so.
 
 
 ### Building

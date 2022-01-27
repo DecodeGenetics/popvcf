@@ -11,12 +11,27 @@
 
 namespace popvcf
 {
-int subcmd_encode(paw::Parser & /*parser*/)
+int subcmd_encode(paw::Parser & parser)
 {
-  // std::string vcf_fn{};
-  // parser.parse_positional_argument(vcf_fn, "VCF", "Encode this VCF. Use '-' for standard input.");
+  std::string vcf_fn{};
 
-  encode();
+  try
+  {
+    parser.parse_positional_argument(vcf_fn,
+                                     "VCF",
+                                     "Encode this VCF (or VCF.gz). If not set, read VCF from standard input.");
+
+    parser.finalize();
+  }
+  catch (paw::exception::missing_positional_argument &)
+  {
+  }
+
+  if (vcf_fn.empty() || vcf_fn == "-")
+    encode();
+  else
+    encode_gzip_file(vcf_fn);
+
   return 0;
 }
 
@@ -47,8 +62,6 @@ int main(int argc, char ** argv)
 
     parser.add_subcommand("encode", "Encode a VCF into a popVCF.");
     parser.add_subcommand("decode", "Decode a popVCF into a VCF.");
-    parser.add_subcommand("getline", "getline on input (for benchmarking)");
-    parser.add_subcommand("fread", "fread on input (for benchmarking)");
 
     parser.parse_subcommand(subcmd);
 
@@ -59,27 +72,6 @@ int main(int argc, char ** argv)
     else if (subcmd == "decode")
     {
       ret = popvcf::subcmd_decode(parser);
-    }
-    else if (subcmd == "getline")
-    {
-      for (std::string line; std::getline(std::cin, line);)
-        std::cout << line << '\n';
-
-      ret = 0;
-    }
-    else if (subcmd == "fread")
-    {
-      long constexpr size{65536};
-      char * buffer;
-      buffer = static_cast<char *>(malloc(size));
-
-      while (fread(buffer, 1, size, stdin) != 0)
-      {
-        std::cout << buffer;
-      }
-
-      free(buffer);
-      ret = 0;
     }
     else if (subcmd.size() == 0)
     {

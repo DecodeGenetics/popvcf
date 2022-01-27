@@ -1,5 +1,6 @@
 /.git*
 /build*/
-/local.gitmodules
-/test/black_box_pesr.log
-/test/data/test_human*
+*.vcf
+*.vcf.gz
+*.popvcf
+*.popvcf.gz

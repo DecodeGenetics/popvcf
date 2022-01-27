@@ -53,6 +53,12 @@ target_include_directories(popvcf_objects PUBLIC ${PROJECT_BINARY_DIR}/include)
 ########################
 ## Build dependencies ##
 ########################
+### zlib ###
+message (STATUS "Checking for zlib")
+find_package(ZLIB REQUIRED)
+target_include_directories(popvcf_objects SYSTEM PUBLIC ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(popvcf PUBLIC ${ZLIB_LIBRARIES})
+
 ### paw ###
 if (CMAKE_BUILD_TYPE STREQUAL "DEBUG")
   message (STATUS "paw in debug mode")
