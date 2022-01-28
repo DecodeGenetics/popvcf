@@ -28,7 +28,7 @@ add_subdirectory(src) # Exposes "popvcf_sources", which contains all source file
 add_library(popvcf_objects OBJECT ${popvcf_sources})
 
 target_compile_features(popvcf_objects PUBLIC cxx_std_17)
-target_compile_options(popvcf_objects PUBLIC -Wall -Wextra -Wfatal-errors -pedantic -Wno-variadic-macros)
+target_compile_options(popvcf_objects PUBLIC -Wall -Wextra -Wfatal-errors -pedantic -Wno-variadic-macros -march=x86-64 -mtune=generic)
 add_dependencies(popvcf_objects project_paw) # popvcf depends on building paw
 
 target_include_directories(popvcf_objects PUBLIC
@@ -79,7 +79,7 @@ else()
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/submodules/paw
   BUILD_IN_SOURCE 0
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/paw
-  CONFIGURE_COMMAND ${CMAKE_COMMAND} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -H${CMAKE_CURRENT_SOURCE_DIR}/submodules/paw -B${CMAKE_CURRENT_BINARY_DIR}/paw -DCMAKE_BUILD_TYPE=${PAW_CMAKE_BUILD_TYPE} -DFORCE_AVX512=1
+  CONFIGURE_COMMAND ${CMAKE_COMMAND} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -H${CMAKE_CURRENT_SOURCE_DIR}/submodules/paw -B${CMAKE_CURRENT_BINARY_DIR}/paw -DCMAKE_BUILD_TYPE=${PAW_CMAKE_BUILD_TYPE} -DFORCE_AVX_FAST=1
   BUILD_COMMAND $(MAKE) -C ${CMAKE_CURRENT_BINARY_DIR}/paw static
   INSTALL_COMMAND "")
 endif()
@@ -104,7 +104,7 @@ ExternalProject_Add(
     BUILD_IN_SOURCE 1
     SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/htslib
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/htslib
-    CONFIGURE_COMMAND cp -a ${CMAKE_CURRENT_SOURCE_DIR}/submodules/htslib ${CMAKE_CURRENT_BINARY_DIR}/ COMMAND autoheader COMMAND autoconf COMMAND ${CMAKE_CURRENT_BINARY_DIR}/htslib/configure --disable-libcurl --disable-gcs --with-libdeflate
+    CONFIGURE_COMMAND cp -a ${CMAKE_CURRENT_SOURCE_DIR}/submodules/htslib ${CMAKE_CURRENT_BINARY_DIR}/ COMMAND autoheader COMMAND autoconf COMMAND ${CMAKE_CURRENT_BINARY_DIR}/htslib/configure --disable-libcurl --disable-gcs --disable-lzma --disable-bz2 --with-libdeflate
         "CFLAGS=${MYCFLAGS} -g -Wall -O3 ${CMAKE_C_FLAGS} -I${CMAKE_CURRENT_BINARY_DIR}/libdeflate"
         "LDFLAGS=${MYLDFLAGS} -L${CMAKE_CURRENT_BINARY_DIR}/libdeflate"
         "CC=${CMAKE_C_COMPILER}"
@@ -150,16 +150,16 @@ set_property(TARGET libdeflate PROPERTY IMPORTED_LOCATION ${libdeflate_location}
 add_dependencies(libdeflate project_libdeflate)
 target_link_libraries(popvcf PUBLIC libdeflate)
 
-### libbz2
-find_package (BZip2 REQUIRED)
-target_link_libraries(popvcf PUBLIC ${BZIP2_LIBRARIES})
-
-### lzma
-find_package (LibLZMA)
-
-if (LIBLZMA_FOUND)
-  target_link_libraries(popvcf PUBLIC ${LIBLZMA_LIBRARIES})
-endif()
+#### libbz2
+#find_package (BZip2 REQUIRED)
+#target_link_libraries(popvcf PUBLIC ${BZIP2_LIBRARIES})
+#
+#### lzma
+#find_package (LibLZMA)
+#
+#if (LIBLZMA_FOUND)
+#  target_link_libraries(popvcf PUBLIC ${LIBLZMA_LIBRARIES})
+#endif()
 
 ### parallel_hashmap ###
 target_include_directories(popvcf_objects SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/submodules/parallel-hashmap)
@@ -172,18 +172,12 @@ target_link_libraries(popvcf PUBLIC ${CMAKE_THREAD_LIBS_INIT})
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     message(STATUS "Using GCC")
     target_link_libraries(popvcf PUBLIC "rt")
-    target_link_libraries(popvcf PUBLIC "stdc++fs")
+    # target_link_libraries(popvcf PUBLIC "stdc++fs")
   elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     message(STATUS "Using Clang")
   else()
     message(WARNING "Unsupported compiler")
   endif ()
-
-#############
-## Testing ##
-#############
-
-# TODO
 
 ################
 # clang-format #

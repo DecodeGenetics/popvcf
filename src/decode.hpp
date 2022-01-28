@@ -5,14 +5,15 @@
 #include <string>
 #include <vector>
 
+#include <popvcf/constants.hpp>
+
 namespace popvcf
 {
 //! Buffer size when decoding
 long constexpr DEC_BUFFER_SIZE{65536};
 
 //! Data type of an array buffer
-using Tdec_array_buf = std::array<char, DEC_BUFFER_SIZE>; //!< Buffer type
-using Tdec_buf_out = std::vector<char>;                   //!< Buffer out type
+using Tdec_array_buf = std::array<char, DEC_BUFFER_SIZE>;
 
 class DecodeData
 {
@@ -32,6 +33,6 @@ template <typename Tbuffer_out>
 void decode_buffer(Tbuffer_out & buffer_out, Tdec_array_buf & buffer_in, DecodeData & ed);
 
 //! Decode an encoded popVCF
-void decode_file(std::string const & popvcf_fn);
+void decode_file(std::string const & popvcf_fn, bool const is_bgzf_input);
 
 } // namespace popvcf

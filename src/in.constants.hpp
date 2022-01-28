@@ -4,7 +4,10 @@
  * \brief Global constants, macros and configurations set by CMake.
  */
 
+#include <array>
 #include <string.h> // strrchr
+#include <string>
+#include <vector>
 
 // clang-format off
 // CMake variables

@@ -110,6 +110,7 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
 }
 
 void encode_file(std::string const & input_fn,
+                 bool const is_bgzf_input,
                  std::string const & output_fn,
                  std::string const & output_mode,
                  bool const is_bgzf_output,
@@ -118,40 +119,41 @@ void encode_file(std::string const & input_fn,
   Tarray_buf buffer_in;  // input buffer
   Tarray_buf buffer_out; // output buffer
   EncodeData ed;         // encode data struct
+
+  /* Input streams */
   bool const is_stdin = input_fn == "-";
+  BGZF * in_bgzf{nullptr};
+  FILE * in{nullptr};
 
-  // may be both gz file and normal plain text file
-  gzFile fp = is_stdin ? nullptr : gzopen(input_fn.c_str(), "r");
-
-  if (not stdin && fp == nullptr)
+  // open input file based on options
+  if (is_bgzf_input)
   {
-    std::cerr << "[popvcf] ERROR: Could not open file " << input_fn << '\n';
-    std::exit(1);
+    in_bgzf = bgzf_open(input_fn.c_str(), "r");
+
+    if (in_bgzf == nullptr)
+    {
+      std::cerr << "[popvcf] ERROR: Opening bgzf file " << input_fn << std::endl;
+      std::exit(1);
+    }
+  }
+  else
+  {
+    in = is_stdin ? stdin : fopen(input_fn.c_str(), "r");
+
+    if (in == nullptr)
+    {
+      std::cerr << "[popvcf] ERROR: Opening file " << output_fn << std::endl;
+      std::exit(1);
+    }
   }
 
+  /* Output streams */
   bool const is_stdout = output_fn == "-";
   BGZF * out_bgzf{nullptr};
   FILE * out{nullptr};
 
   // open output file based on options
-  if (not is_bgzf_output)
-  {
-    if (not is_stdout)
-    {
-      out = fopen(output_fn.c_str(), output_mode.c_str());
-
-      if (out == nullptr)
-      {
-        std::cerr << "[popvcf] ERROR: Opening file " << output_fn << std::endl;
-        std::exit(1);
-      }
-    }
-    else
-    {
-      out = stdout;
-    }
-  }
-  else
+  if (is_bgzf_output)
   {
     out_bgzf = bgzf_open(output_fn.c_str(), output_mode.c_str());
 
@@ -164,12 +166,29 @@ void encode_file(std::string const & input_fn,
     if (compression_threads > 1)
       bgzf_mt(out_bgzf, compression_threads, 256);
   }
+  else
+  {
+    if (is_stdout)
+    {
+      out = stdout;
+    }
+    else
+    {
+      out = fopen(output_fn.c_str(), output_mode.c_str());
+
+      if (out == nullptr)
+      {
+        std::cerr << "[popvcf] ERROR: Opening file " << output_fn << std::endl;
+        std::exit(1);
+      }
+    }
+  }
 
   // read first input data
-  if (is_stdin)
-    ed.bytes_read = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, stdin);
+  if (is_bgzf_input)
+    ed.bytes_read = bgzf_read(in_bgzf, buffer_in.data(), ENC_BUFFER_SIZE);
   else
-    ed.bytes_read = gzread(fp, buffer_in.data(), ENC_BUFFER_SIZE);
+    ed.bytes_read = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, in);
 
   // loop until all data has been read
   while (ed.bytes_read != 0)
@@ -197,20 +216,26 @@ void encode_file(std::string const & input_fn,
     ed.o = 0;
 
     // attempt to read more data from input
-    if (is_stdin)
-    {
-      ed.bytes_read = fread(buffer_in.data() + ed.remaining_bytes, 1, ENC_BUFFER_SIZE - ed.remaining_bytes, stdin);
-    }
+    if (is_bgzf_input)
+      ed.bytes_read = bgzf_read(in_bgzf, buffer_in.data() + ed.remaining_bytes, ENC_BUFFER_SIZE - ed.remaining_bytes);
     else
-    {
-      ed.bytes_read = gzread(fp,                                    // file pointer
-                             buffer_in.data() + ed.remaining_bytes, // buffer
-                             ENC_BUFFER_SIZE - ed.remaining_bytes); // size
-    }
+      ed.bytes_read = fread(buffer_in.data() + ed.remaining_bytes, 1, ENC_BUFFER_SIZE - ed.remaining_bytes, in);
   }
 
-  if (not is_stdin)
-    gzclose(fp);
+  if (in_bgzf != nullptr)
+  {
+    int ret = bgzf_close(in_bgzf);
+
+    if (ret != 0)
+    {
+      std::cerr << "[popvcf] ERROR: Failed closing bgzf file " << input_fn << std::endl;
+      std::exit(1);
+    }
+  }
+  else if (not is_stdout)
+  {
+    fclose(in);
+  }
 
   if (out_bgzf != nullptr)
   {
@@ -222,7 +247,7 @@ void encode_file(std::string const & input_fn,
       std::exit(1);
     }
   }
-  else if (not stdout)
+  else if (not is_stdout)
   {
     fclose(out);
   }

@@ -40,6 +40,7 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
 
 //! Encode a gzipped file and write to stdout
 void encode_file(std::string const & input_fn,
+                 bool const is_bgzf_input,
                  std::string const & output_fn,
                  std::string const & output_mode,
                  bool const is_bgzf_output,
