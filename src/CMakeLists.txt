@@ -1,3 +1,5 @@
+cmake_minimum_required (VERSION 3.8)
+
 # Update with "find src -name "*.?pp" | sort | awk '$1 !~ /main.cpp/{print "  "$1}'" in project root directory
 set(popvcf_sources
   src/encode.cpp

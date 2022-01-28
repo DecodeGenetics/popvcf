@@ -9,6 +9,8 @@
 
 #include "sequence_utils.hpp" // int_to_ascii
 
+#include "htslib/bgzf.h"
+
 namespace popvcf
 {
 using Tenc_map = phmap::flat_hash_map<std::string, int32_t>; //!< Hash table implementation to use when encoding
@@ -23,6 +25,7 @@ void reserve_space(Tbuffer_out & buffer)
 template <>
 void reserve_space(Tarray_buf & /*buffer*/)
 {
+  // NOP
 }
 
 template <typename Tbuffer_out>
@@ -106,61 +109,122 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
   ed.i = ed.remaining_bytes;
 }
 
-void encode()
+void encode_file(std::string const & input_fn,
+                 std::string const & output_fn,
+                 std::string const & output_mode,
+                 bool const is_bgzf_output,
+                 int const compression_threads)
 {
   Tarray_buf buffer_in;  // input buffer
   Tarray_buf buffer_out; // output buffer
   EncodeData ed;         // encode data struct
+  bool const is_stdin = input_fn == "-";
 
-  // read the first buffer of input data from stdin
-  ed.bytes_read = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, stdin);
+  // may be both gz file and normal plain text file
+  gzFile fp = is_stdin ? nullptr : gzopen(input_fn.c_str(), "r");
 
-  while (ed.bytes_read != 0)
+  if (not stdin && fp == nullptr)
   {
-    // encode the input buffer and write to output buffer
-    encode_buffer(buffer_out, buffer_in, ed);
-
-    // write the output buffer to standard output
-    fwrite(buffer_out.data(), 1, ed.o, stdout); // write to stdout
-    ed.o = 0;
-
-    // attempt to read more data from stdin
-    ed.bytes_read = fread(buffer_in.data() + ed.remaining_bytes, // buffer
-                          1,
-                          ENC_BUFFER_SIZE - ed.remaining_bytes, // size
-                          stdin);
-  } /// ends outer loop
-}
-
-void encode_gzip_file(std::string const & gz_fn)
-{
-  Tarray_buf buffer_in;  // input buffer
-  Tarray_buf buffer_out; // output buffer
-  EncodeData ed;         // encode data struct
-
-  gzFile fp = gzopen(gz_fn.c_str(), "r");
-
-  if (fp == nullptr)
-  {
-    std::cerr << "ERROR: Could not open file " << gz_fn << '\n';
+    std::cerr << "[popvcf] ERROR: Could not open file " << input_fn << '\n';
     std::exit(1);
   }
 
-  ed.bytes_read = gzread(fp, buffer_in.data(), ENC_BUFFER_SIZE);
+  bool const is_stdout = output_fn == "-";
+  BGZF * out_bgzf{nullptr};
+  FILE * out{nullptr};
 
+  // open output file based on options
+  if (not is_bgzf_output)
+  {
+    if (not is_stdout)
+    {
+      out = fopen(output_fn.c_str(), output_mode.c_str());
+
+      if (out == nullptr)
+      {
+        std::cerr << "[popvcf] ERROR: Opening file " << output_fn << std::endl;
+        std::exit(1);
+      }
+    }
+    else
+    {
+      out = stdout;
+    }
+  }
+  else
+  {
+    out_bgzf = bgzf_open(output_fn.c_str(), output_mode.c_str());
+
+    if (out_bgzf == nullptr)
+    {
+      std::cerr << "[popvcf] ERROR: Opening bgzf file " << output_fn << std::endl;
+      std::exit(1);
+    }
+
+    if (compression_threads > 1)
+      bgzf_mt(out_bgzf, compression_threads, 256);
+  }
+
+  // read first input data
+  if (is_stdin)
+    ed.bytes_read = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, stdin);
+  else
+    ed.bytes_read = gzread(fp, buffer_in.data(), ENC_BUFFER_SIZE);
+
+  // loop until all data has been read
   while (ed.bytes_read != 0)
   {
     // encode the input buffer and write to output buffer
     encode_buffer(buffer_out, buffer_in, ed);
 
-    // write the output buffer to standard output
-    fwrite(buffer_out.data(), 1, ed.o, stdout); // write to stdout
+    // write output buffer
+    if (out_bgzf != nullptr)
+    {
+      long const written_bytes = bgzf_write(out_bgzf, buffer_out.data(), ed.o);
+
+      if (written_bytes != static_cast<long>(ed.o))
+      {
+        std::cerr << "[popvcf] WARNING: Problem writing bgzf data to " << output_fn << " " << written_bytes
+                  << " bytes written but expected " << ed.o << " bytes." << std::endl;
+      }
+    }
+    else
+    {
+      fwrite(buffer_out.data(), 1, ed.o, out); // write to stdout
+    }
+
+    // clear output index
     ed.o = 0;
 
-    // attempt to read more data from stdin
-    ed.bytes_read = gzread(fp,                                    // file pointer
-                           buffer_in.data() + ed.remaining_bytes, // buffer
-                           ENC_BUFFER_SIZE - ed.remaining_bytes); // size
+    // attempt to read more data from input
+    if (is_stdin)
+    {
+      ed.bytes_read = fread(buffer_in.data() + ed.remaining_bytes, 1, ENC_BUFFER_SIZE - ed.remaining_bytes, stdin);
+    }
+    else
+    {
+      ed.bytes_read = gzread(fp,                                    // file pointer
+                             buffer_in.data() + ed.remaining_bytes, // buffer
+                             ENC_BUFFER_SIZE - ed.remaining_bytes); // size
+    }
+  }
+
+  if (not is_stdin)
+    gzclose(fp);
+
+  if (out_bgzf != nullptr)
+  {
+    int ret = bgzf_close(out_bgzf);
+
+    if (ret != 0)
+    {
+      std::cerr << "[popvcf] ERROR: Failed closing bgzf file " << output_fn << std::endl;
+      std::exit(1);
+    }
+  }
+  else if (not stdout)
+  {
+    fclose(out);
   }
 }
 

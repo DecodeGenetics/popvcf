@@ -4,8 +4,7 @@
  * \brief Global constants, macros and configurations set by CMake.
  */
 
-#include <string.h>    // strrchr
-#include <string_view> // std::string_view
+#include <string.h> // strrchr
 
 // clang-format off
 // CMake variables
@@ -22,9 +21,6 @@
 
 namespace popvcf
 {
-std::string_view constexpr popvcf_source_dir(popvcf_SOURCE_DIRECTORY);
-std::string_view constexpr popvcf_binary_dir(popvcf_BINARY_DIRECTORY);
-
 // Macros
 #define S1_popvcf_internal__(x) #x
 #define S2_popvcf_internal__(x) S1_popvcf_internal__(x)

@@ -38,10 +38,11 @@ public:
 template <typename Tbuffer_out>
 void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData & ed);
 
-//! Writes the encoding of a stdin VCF to stdout
-void encode();
-
 //! Encode a gzipped file and write to stdout
-void encode_gzip_file(std::string const & gz_fn);
+void encode_file(std::string const & input_fn,
+                 std::string const & output_fn,
+                 std::string const & output_mode,
+                 bool const is_bgzf_output,
+                 int const compression_threads);
 
 } // namespace popvcf

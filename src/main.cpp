@@ -13,7 +13,12 @@ namespace popvcf
 {
 int subcmd_encode(paw::Parser & parser)
 {
-  std::string vcf_fn{};
+  std::string vcf_fn{"-"};
+  std::string output_fn{"-"};
+  std::string output_mode{"w"};
+  std::string output_type{"v"};
+  int output_compression_level{-1};
+  int compression_threads{1};
 
   try
   {
@@ -21,26 +26,43 @@ int subcmd_encode(paw::Parser & parser)
                                      "VCF",
                                      "Encode this VCF (or VCF.gz). If not set, read VCF from standard input.");
 
+    parser.parse_option(output_fn, 'o', "output", "VCF.gz", "Output filename.");
+    parser.parse_option(output_compression_level,
+                        'l',
+                        "output-compress-level",
+                        "INT",
+                        "Output file compression level.");
+    parser.parse_option(compression_threads, '@', "threads", "INT", "Output file compression level.");
+    parser.parse_option(output_type, 'O', "output-type", "v|z", "Output type. v uncompressed VCF, z bgzipped VCF.");
+
     parser.finalize();
   }
   catch (paw::exception::missing_positional_argument &)
   {
+    output_fn = "-";
   }
 
-  if (vcf_fn.empty() || vcf_fn == "-")
-    encode();
-  else
-    encode_gzip_file(vcf_fn);
+  if (output_compression_level >= 0)
+    output_mode += std::to_string(std::min(9, output_compression_level));
 
+  encode_file(vcf_fn, output_fn, output_mode, output_type == "z", compression_threads);
   return 0;
 }
 
-int subcmd_decode(paw::Parser & /*parser*/)
+int subcmd_decode(paw::Parser & parser)
 {
-  // std::string popvcf_fn{};
-  // parser.parse_positional_argument(popvcf_fn, "popVCF", "Decode this popVCF. Use '-' for standard input.");
+  std::string popvcf_fn{};
 
-  decode();
+  try
+  {
+    parser.parse_positional_argument(popvcf_fn, "popVCF", "Decode this popVCF. Use '-' for standard input.");
+  }
+  catch (paw::exception::missing_positional_argument &)
+  {
+    popvcf_fn = "-";
+  }
+
+  decode_file(popvcf_fn);
   return 0;
 }
 

@@ -1,7 +1,3 @@
-[submodule "submodules/catch"]
-	path = submodules/catch
-	url = https://github.com/catchorg/Catch2.git
-	ignore = dirty
 [submodule "submodules/parallel-hashmap"]
 	path = submodules/parallel-hashmap
 	url = https://github.com/greg7mdp/parallel-hashmap.git
@@ -9,4 +5,12 @@
 [submodule "submodules/paw"]
 	path = submodules/paw
 	url = https://github.com/hannespetur/paw.git
+	ignore = dirty
+[submodule "submodules/htslib"]
+	path = submodules/htslib
+	url = https://github.com/samtools/htslib.git
+	ignore = dirty
+[submodule "submodules/libdeflate"]
+	path = submodules/libdeflate
+	url = https://github.com/ebiggers/libdeflate.git
 	ignore = dirty
