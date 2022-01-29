@@ -47,6 +47,11 @@ int subcmd_encode(paw::Parser & parser)
   if (output_compression_level >= 0)
     output_mode += std::to_string(std::min(9, output_compression_level));
 
+  long const n = vcf_fn.size();
+
+  if (n > 3 && vcf_fn[n - 2] == 'g' && vcf_fn[n - 1] == 'z')
+    input_type = "z";
+
   encode_file(vcf_fn, input_type == "z", output_fn, output_mode, output_type == "z", compression_threads);
   return 0;
 }

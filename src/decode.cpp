@@ -6,7 +6,6 @@
 #include <iostream>  // std::cerr
 #include <string>    // std::string
 #include <vector>    // std::vector
-#include <zlib.h>
 
 #include "sequence_utils.hpp" // ascii_cstring_to_int
 
@@ -29,7 +28,10 @@ void decode_buffer(Tbuffer_out & buffer_out, Tdec_array_buf & buffer_in, DecodeD
       continue; // we are in a vcf field
     }
 
-    if (dd.field < N_FIELDS_SITE_DATA)
+    if (dd.field == 0)
+      dd.header_line = buffer_in[dd.b] == '#';
+
+    if (dd.header_line || dd.field < N_FIELDS_SITE_DATA)
     {
       ++dd.i; // adds '\t' or '\n'
       std::copy(buffer_in.begin() + dd.b, buffer_in.begin() + dd.i, std::back_inserter(buffer_out));
@@ -112,14 +114,6 @@ void decode_file(std::string const & input_fn, bool const is_bgzf_input)
     }
   }
 
-  gzFile in_fp = is_stdin ? nullptr : gzopen(input_fn.c_str(), "r");
-
-  if (not stdin && in_fp == nullptr)
-  {
-    std::cerr << "[popvcf] ERROR: Could not open file " << input_fn << '\n';
-    std::exit(1);
-  }
-
   buffer_out.reserve(16 * DEC_BUFFER_SIZE);
   dd.unique_fields.reserve(32 * 1024);
 
@@ -148,6 +142,15 @@ void decode_file(std::string const & input_fn, bool const is_bgzf_input)
   } /// ends outer loop
 
   fwrite(buffer_out.data(), 1, buffer_out.size(), stdout); // write to stdout
+
+  if (is_bgzf_input)
+    bgzf_close(in_bgzf);
+  else if (not is_stdin)
+    fclose(in);
 }
+
+
+template void decode_buffer(std::vector<char> & buffer_out, Tdec_array_buf & buffer_in, DecodeData & dd);
+template void decode_buffer(std::string & buffer_out, Tdec_array_buf & buffer_in, DecodeData & dd);
 
 } // namespace popvcf

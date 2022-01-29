@@ -10,7 +10,7 @@
 namespace popvcf
 {
 //! Buffer size when decoding
-long constexpr DEC_BUFFER_SIZE{65536};
+long constexpr DEC_BUFFER_SIZE{4*65536};
 
 //! Data type of an array buffer
 using Tdec_array_buf = std::array<char, DEC_BUFFER_SIZE>;
@@ -24,6 +24,7 @@ public:
   std::size_t b{0};     // begin index in buffer_in
   std::size_t i{b};     // index in buffer_in
   std::size_t o{0};     // output index
+  bool header_line{true};
 
   std::vector<std::string> unique_fields{};
 };
