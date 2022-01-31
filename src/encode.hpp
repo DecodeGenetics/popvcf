@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <parallel_hashmap/phmap.h>
 
@@ -24,14 +25,33 @@ public:
   std::size_t o{0};       // output index
   bool header_line{true}; //!< True iff in header line
 
-  uint32_t num_unique_fields{0};
+  std::string prev_contig{};
+  uint64_t prev_pos{0};
+  std::vector<std::string> prev_unique_fields{};
+  //std::vector<uint32_t> prev_field2uid{};
+  phmap::flat_hash_map<std::string, uint32_t> prev_map_to_unique_fields{};
+
+  std::string contig{};
+  uint64_t pos{0};
+  std::vector<std::string> unique_fields{};
+  //std::vector<uint32_t> field2uid{};
   phmap::flat_hash_map<std::string, uint32_t> map_to_unique_fields{};
 
   inline void clear_line()
   {
     field = 0;                    // reset field index
+
+    std::swap(prev_contig, contig);
+    prev_pos = pos;
+    std::swap(prev_unique_fields, unique_fields);
+    //std::swap(prev_field2uid, field2uid);
+    std::swap(prev_map_to_unique_fields, map_to_unique_fields);
+
+    contig.resize(0);
+    pos = 0;
+    unique_fields.resize(0);
+    //field2uid.resize(0);
     map_to_unique_fields.clear(); // clear map every line
-    num_unique_fields = 0;        // clear the number of unique fields
   }
 };
 

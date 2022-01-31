@@ -44,24 +44,33 @@ void decode_buffer(Tbuffer_out & buffer_out, Tdec_array_buf & buffer_in, DecodeD
     }
     else
     {
-      if (buffer_in[dd.b] != '$') /* (buffer_in[dd.b] < ':') */
+      if (buffer_in[dd.b] == '$')
+      {
+	// write out a previous unique field in the same line
+        uint32_t unique_index{0};
+        std::from_chars(&buffer_in[dd.b + 1], &buffer_in[dd.i++], unique_index);
+        std::string const & prior_field = dd.unique_fields[unique_index];
+        std::copy(prior_field.begin(), prior_field.end(), std::back_inserter(buffer_out));
+        buffer_out.push_back(b_in);
+      }
+      else if (buffer_in[dd.b] == '%')
+      {
+	// unique field within the line but was seen in the previous line
+	uint32_t prev_unique_index{0};
+        std::from_chars(&buffer_in[dd.b + 1], &buffer_in[dd.i++], prev_unique_index);
+	assert(prev_unique_index < dd.prev_unique_fields.size());
+        std::string const & prior_field = dd.prev_unique_fields[prev_unique_index];
+        std::copy(prior_field.begin(), prior_field.end(), std::back_inserter(buffer_out));
+	dd.unique_fields.emplace_back(prior_field);
+        buffer_out.push_back(b_in);
+      }
+      else
       {
         // add a new unique field and write field without any encoding
         dd.unique_fields.emplace_back(&buffer_in[dd.b], dd.i - dd.b);
         std::copy(buffer_in.begin() + dd.b, buffer_in.begin() + (++dd.i), std::back_inserter(buffer_out));
       }
-      else
-      {
-        // write out a previous unique field
-        int32_t unique_index{0};
-        std::from_chars(&buffer_in[dd.b + 1], &buffer_in[dd.i++], unique_index);
 
-        //  int32_t const unique_index = ascii_cstring_to_int(&buffer_in[dd.b], &buffer_in[dd.i++]);
-        //  assert(unique_index < static_cast<int32_t>(dd.unique_fields.size()));
-        std::string const & prior_field = dd.unique_fields[unique_index];
-        std::copy(prior_field.begin(), prior_field.end(), std::back_inserter(buffer_out));
-        buffer_out.push_back(b_in);
-      }
     }
 
     assert(b_in == buffer_in[dd.i - 1]);
@@ -70,6 +79,7 @@ void decode_buffer(Tbuffer_out & buffer_out, Tdec_array_buf & buffer_in, DecodeD
     if (b_in == '\n')
     {
       dd.field = 0;
+      std::swap(dd.prev_unique_fields, dd.unique_fields);
       dd.unique_fields.resize(0);
     }
     else

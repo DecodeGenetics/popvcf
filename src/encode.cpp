@@ -47,7 +47,30 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
     }
 
     if (ed.field == 0)
-      ed.header_line = buffer_in[ed.b] == '#'; // check if in header line
+    {
+      // check if in header line and store contig
+      if (buffer_in[ed.b] == '#')
+      {
+        ed.header_line = true;
+      }
+      else
+      {
+	ed.header_line = false;
+	ed.contig = std::string(&buffer_in[ed.b], ed.i - ed.b);\
+      }
+    }
+    else if (ed.header_line == false && ed.field == 1)
+    {
+      std::from_chars(&buffer_in[ed.b], &buffer_in[ed.i], ed.pos);
+
+      if (ed.contig != ed.prev_contig || (ed.pos / 10000) != (ed.prev_pos / 10000))
+      {
+	// previous line is not available
+	ed.prev_unique_fields.resize(0);
+	//ed.prev_field2uid.resize(0);
+	ed.prev_map_to_unique_fields.clear();
+      }
+    }
 
     if (ed.header_line || ed.field < N_FIELDS_SITE_DATA /*|| (ed.i - ed.b) <= 5*/)
     {
@@ -63,20 +86,54 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
       auto insert_it = ed.map_to_unique_fields.insert(
         std::pair<std::string, uint32_t>(std::piecewise_construct,
                                          std::forward_as_tuple(&buffer_in[ed.b], ed.i - ed.b),
-                                         std::forward_as_tuple(ed.num_unique_fields)));
+                                         std::forward_as_tuple(static_cast<uint32_t>(ed.unique_fields.size()))));
 
       if (insert_it.second == true)
       {
-        ++ed.num_unique_fields; // unique field
-        ++ed.i;                 // adds '\t' or '\n'
-        std::copy(&buffer_in[ed.b], &buffer_in[ed.i], &buffer_out[ed.o]);
-        ed.o += (ed.i - ed.b);
+	// unique field
+	//ed.field2uid.push_back(ed.unique_fields.size());
+	ed.unique_fields.emplace_back(&buffer_in[ed.b], ed.i - ed.b);
+	std::string const & new_field = ed.unique_fields[ed.unique_fields.size() - 1];
+
+	// check if it is in the previous line
+	auto prev_find_it = ed.prev_map_to_unique_fields.find(new_field);
+
+	if (prev_find_it == ed.prev_map_to_unique_fields.end())
+	{
+	  // Not in previous line either, just copy as is
+          ++ed.i;                 // adds '\t' or '\n'
+          std::copy(&buffer_in[ed.b], &buffer_in[ed.i], &buffer_out[ed.o]);
+          ed.o += (ed.i - ed.b);
+	}
+	else
+	{
+	  // field identical to prior field in the previous line
+	  buffer_out[ed.o++] = '%';
+	  
+	  //if ((ed.field - N_FIELDS_SITE_DATA) >= ed.prev_field2uid.size() ||
+	  //    ed.prev_field2uid[ed.field - N_FIELDS_SITE_DATA] != prev_find_it->second)
+	  {
+            auto ret = std::to_chars(&buffer_out[ed.o], &buffer_out[ed.o + 8], prev_find_it->second);
+
+#ifndef NDEBUG
+            if (ret.ec == std::errc::value_too_large)
+            {
+              std::cerr << "ERROR: Index value too large\n";
+              std::exit(1);
+            }
+#endif // NDEBUG
+            ed.o += (ret.ptr - &buffer_out[ed.o]);
+	  }
+
+	  buffer_out[ed.o++] = buffer_in[ed.i++]; // write '\t' or '\n'
+	}
       }
       else
       {
-        // field identical to prior field
+        // field identical to prior field in the same line
+	//ed.field2uid.push_back(insert_it.first->second);
         buffer_out[ed.o++] = '$';
-        auto ret = std::to_chars(&buffer_out[ed.o], &buffer_out[ed.o + 9], insert_it.first->second);
+        auto ret = std::to_chars(&buffer_out[ed.o], &buffer_out[ed.o + 8], insert_it.first->second);
 
 #ifndef NDEBUG
         if (ret.ec == std::errc::value_too_large)

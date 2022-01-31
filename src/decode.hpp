@@ -26,6 +26,9 @@ public:
   std::size_t o{0};       // output index
   bool header_line{true}; //!< True iff in header line
 
+  std::vector<uint32_t> prev_field2uid{}; // TODO
+  std::vector<uint32_t> field2uid{};
+  std::vector<std::string> prev_unique_fields{};
   std::vector<std::string> unique_fields{};
 };
 
