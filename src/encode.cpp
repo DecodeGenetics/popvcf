@@ -1,20 +1,22 @@
 #include "encode.hpp"
 
-#include <array>    // std::array
+#include <array> // std::array
+#include <charconv>
 #include <iostream> // std::cerr
 #include <string>   // std::string
 #include <zlib.h>
 
 #include <parallel_hashmap/phmap.h> // phmap::flat_hash_map
 
+#include "io.hpp"
 #include "sequence_utils.hpp" // int_to_ascii
 
 #include "htslib/bgzf.h"
 
+class BGZF;
+
 namespace popvcf
 {
-using Tenc_map = phmap::flat_hash_map<std::string, int32_t>; //!< Hash table implementation to use when encoding
-
 template <typename Tbuffer_out>
 void reserve_space(Tbuffer_out & buffer)
 {
@@ -44,7 +46,10 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
       continue; // we are in a vcf field
     }
 
-    if (ed.field < N_FIELDS_SITE_DATA)
+    if (ed.field == 0)
+      ed.header_line = buffer_in[ed.b] == '#'; // check if in header line
+
+    if (ed.header_line || ed.field < N_FIELDS_SITE_DATA /*|| (ed.i - ed.b) <= 5*/)
     {
       ++ed.i; // adds '\t' or '\n'
       std::copy(&buffer_in[ed.b], &buffer_in[ed.i], &buffer_out[ed.o]);
@@ -56,9 +61,9 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
       assert(buffer_in[ed.b] <= '9');
 
       auto insert_it = ed.map_to_unique_fields.insert(
-        std::pair<std::string, int32_t>(std::piecewise_construct,
-                                        std::forward_as_tuple(&buffer_in[ed.b], ed.i - ed.b),
-                                        std::forward_as_tuple(ed.num_unique_fields)));
+        std::pair<std::string, uint32_t>(std::piecewise_construct,
+                                         std::forward_as_tuple(&buffer_in[ed.b], ed.i - ed.b),
+                                         std::forward_as_tuple(ed.num_unique_fields)));
 
       if (insert_it.second == true)
       {
@@ -70,17 +75,17 @@ void encode_buffer(Tbuffer_out & buffer_out, Tarray_buf & buffer_in, EncodeData 
       else
       {
         // field identical to prior field
-        int32_t char_val = insert_it.first->second; // character value of previous field, need to convert to string
+        buffer_out[ed.o++] = '$';
+        auto ret = std::to_chars(&buffer_out[ed.o], &buffer_out[ed.o + 9], insert_it.first->second);
 
-        while (char_val >= CHAR_SET_SIZE)
+#ifndef NDEBUG
+        if (ret.ec == std::errc::value_too_large)
         {
-          auto rem = char_val % CHAR_SET_SIZE;
-          char_val = char_val / CHAR_SET_SIZE;
-          buffer_out[ed.o++] = int_to_ascii(rem);
+          std::cerr << "ERROR: Index value too large\n";
+          std::exit(1);
         }
-
-        assert(char_val < CHAR_SET_SIZE);
-        buffer_out[ed.o++] = int_to_ascii(char_val);
+#endif // NDEBUG
+        ed.o += (ret.ptr - &buffer_out[ed.o]);
         buffer_out[ed.o++] = buffer_in[ed.i++];
       }
     }
@@ -120,75 +125,36 @@ void encode_file(std::string const & input_fn,
   Tarray_buf buffer_out; // output buffer
   EncodeData ed;         // encode data struct
 
-  /* Input streams */
-  bool const is_stdin = input_fn == "-";
-  BGZF * in_bgzf{nullptr};
-  FILE * in{nullptr};
+  // Open input file streams
+  BGZF * in_bgzf{nullptr}; // bgzf input stream
+  FILE * in_vcf{nullptr};  // vcf input stream
 
-  // open input file based on options
   if (is_bgzf_input)
-  {
-    in_bgzf = bgzf_open(input_fn.c_str(), "r");
-
-    if (in_bgzf == nullptr)
-    {
-      std::cerr << "[popvcf] ERROR: Opening bgzf file " << input_fn << std::endl;
-      std::exit(1);
-    }
-  }
+    in_bgzf = popvcf::open_bgzf(input_fn, "r");
   else
-  {
-    in = is_stdin ? stdin : fopen(input_fn.c_str(), "r");
+    in_vcf = popvcf::open_vcf(input_fn, "r");
 
-    if (in == nullptr)
-    {
-      std::cerr << "[popvcf] ERROR: Opening file " << output_fn << std::endl;
-      std::exit(1);
-    }
-  }
+  // Open output file streams
+  BGZF * out_bgzf{nullptr}; // bgzf output stream
+  FILE * out_vcf{nullptr};  // vcf output stream
 
-  /* Output streams */
-  bool const is_stdout = output_fn == "-";
-  BGZF * out_bgzf{nullptr};
-  FILE * out{nullptr};
-
-  // open output file based on options
   if (is_bgzf_output)
   {
-    out_bgzf = bgzf_open(output_fn.c_str(), output_mode.c_str());
-
-    if (out_bgzf == nullptr)
-    {
-      std::cerr << "[popvcf] ERROR: Opening bgzf file " << output_fn << std::endl;
-      std::exit(1);
-    }
+    out_bgzf = popvcf::open_bgzf(output_fn.c_str(), output_mode.c_str());
 
     if (compression_threads > 1)
       bgzf_mt(out_bgzf, compression_threads, 256);
   }
   else
   {
-    if (is_stdout)
-    {
-      out = stdout;
-    }
-    else
-    {
-      out = fopen(output_fn.c_str(), output_mode.c_str());
-
-      if (out == nullptr)
-      {
-        std::cerr << "[popvcf] ERROR: Opening file " << output_fn << std::endl;
-        std::exit(1);
-      }
-    }
+    out_vcf = popvcf::open_vcf(output_fn, output_mode);
   }
 
-  // read first input data
+  /// Read first buffer of input data
   if (is_bgzf_input)
     ed.bytes_read = bgzf_read(in_bgzf, buffer_in.data(), ENC_BUFFER_SIZE);
   else
-    ed.bytes_read = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, in);
+    ed.bytes_read = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, in_vcf);
 
   // loop until all data has been read
   while (ed.bytes_read != 0)
@@ -209,47 +175,34 @@ void encode_file(std::string const & input_fn,
     }
     else
     {
-      fwrite(buffer_out.data(), 1, ed.o, out); // write to stdout
+      fwrite(buffer_out.data(), 1, ed.o, out_vcf); // write output buffer
     }
 
-    // clear output index
-    ed.o = 0;
+    ed.o = 0; // clear output index
 
     // attempt to read more data from input
     if (is_bgzf_input)
       ed.bytes_read = bgzf_read(in_bgzf, buffer_in.data() + ed.remaining_bytes, ENC_BUFFER_SIZE - ed.remaining_bytes);
     else
-      ed.bytes_read = fread(buffer_in.data() + ed.remaining_bytes, 1, ENC_BUFFER_SIZE - ed.remaining_bytes, in);
+      ed.bytes_read = fread(buffer_in.data() + ed.remaining_bytes, 1, ENC_BUFFER_SIZE - ed.remaining_bytes, in_vcf);
   }
 
+  /// Close input streams
   if (in_bgzf != nullptr)
-  {
-    int ret = bgzf_close(in_bgzf);
+    popvcf::close_bgzf(in_bgzf);
+  else if (output_fn != "-")
+    fclose(in_vcf);
 
-    if (ret != 0)
-    {
-      std::cerr << "[popvcf] ERROR: Failed closing bgzf file " << input_fn << std::endl;
-      std::exit(1);
-    }
-  }
-  else if (not is_stdout)
-  {
-    fclose(in);
-  }
-
+  /// Close output streams
   if (out_bgzf != nullptr)
-  {
-    int ret = bgzf_close(out_bgzf);
+    popvcf::close_bgzf(out_bgzf);
+  else if (output_fn != "-")
+    fclose(out_vcf);
 
-    if (ret != 0)
-    {
-      std::cerr << "[popvcf] ERROR: Failed closing bgzf file " << output_fn << std::endl;
-      std::exit(1);
-    }
-  }
-  else if (not is_stdout)
+  if (ed.remaining_bytes != 0)
   {
-    fclose(out);
+    std::cerr << "WARNING: After reading the input data we end inside of a field, the input may be truncated.\n"
+              << "Remaining bytes=" << ed.remaining_bytes << " != 0" << std::endl;
   }
 }
 

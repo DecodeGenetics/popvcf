@@ -18,13 +18,14 @@ class EncodeData
 public:
   std::size_t bytes_read{0};
   std::size_t remaining_bytes{0};
-  std::size_t field{0}; // current vcf field
-  std::size_t b{0};     // begin index in buffer_in
-  std::size_t i{b};     // index in buffer_in
-  std::size_t o{0};     // output index
+  std::size_t field{0};   // current vcf field
+  std::size_t b{0};       // begin index in buffer_in
+  std::size_t i{b};       // index in buffer_in
+  std::size_t o{0};       // output index
+  bool header_line{true}; //!< True iff in header line
 
-  int32_t num_unique_fields{0};
-  phmap::flat_hash_map<std::string, int32_t> map_to_unique_fields{};
+  uint32_t num_unique_fields{0};
+  phmap::flat_hash_map<std::string, uint32_t> map_to_unique_fields{};
 
   inline void clear_line()
   {

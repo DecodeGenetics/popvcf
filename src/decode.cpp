@@ -2,11 +2,14 @@
 
 #include <algorithm> //std::copy
 #include <array>     // std::array
-#include <cstring>   // std::memmove
-#include <iostream>  // std::cerr
-#include <string>    // std::string
-#include <vector>    // std::vector
+#include <charconv>
+#include <cstdio>   // std::stdin
+#include <cstring>  // std::memmove
+#include <iostream> // std::cerr
+#include <string>   // std::string
+#include <vector>   // std::vector
 
+#include "io.hpp"
 #include "sequence_utils.hpp" // ascii_cstring_to_int
 
 #include "htslib/bgzf.h"
@@ -18,35 +21,43 @@ void decode_buffer(Tbuffer_out & buffer_out, Tdec_array_buf & buffer_in, DecodeD
 {
   std::size_t constexpr N_FIELDS_SITE_DATA{9};
 
+  // inner loop - Loops over each character in the input buffer
   while (dd.i < (dd.bytes_read + dd.remaining_bytes))
   {
     char const b_in = buffer_in[dd.i];
 
     if (b_in != '\t' && b_in != '\n')
     {
+      // we are in a vcf field
       ++dd.i;
-      continue; // we are in a vcf field
+      continue;
     }
 
     if (dd.field == 0)
-      dd.header_line = buffer_in[dd.b] == '#';
+      dd.header_line = buffer_in[dd.b] == '#'; // check if in header line
 
     if (dd.header_line || dd.field < N_FIELDS_SITE_DATA)
     {
+      // write field without any encoding
       ++dd.i; // adds '\t' or '\n'
       std::copy(buffer_in.begin() + dd.b, buffer_in.begin() + dd.i, std::back_inserter(buffer_out));
     }
     else
     {
-      if (buffer_in[dd.b] < ':')
+      if (buffer_in[dd.b] != '$') /* (buffer_in[dd.b] < ':') */
       {
-        dd.unique_fields.emplace_back(&buffer_in[dd.b], dd.i - dd.b); // add the unique field
+        // add a new unique field and write field without any encoding
+        dd.unique_fields.emplace_back(&buffer_in[dd.b], dd.i - dd.b);
         std::copy(buffer_in.begin() + dd.b, buffer_in.begin() + (++dd.i), std::back_inserter(buffer_out));
       }
       else
       {
-        int32_t const unique_index = ascii_cstring_to_int(&buffer_in[dd.b], &buffer_in[dd.i++]);
-        assert(unique_index < static_cast<int32_t>(dd.unique_fields.size()));
+        // write out a previous unique field
+        int32_t unique_index{0};
+        std::from_chars(&buffer_in[dd.b + 1], &buffer_in[dd.i++], unique_index);
+
+        //  int32_t const unique_index = ascii_cstring_to_int(&buffer_in[dd.b], &buffer_in[dd.i++]);
+        //  assert(unique_index < static_cast<int32_t>(dd.unique_fields.size()));
         std::string const & prior_field = dd.unique_fields[unique_index];
         std::copy(prior_field.begin(), prior_field.end(), std::back_inserter(buffer_out));
         buffer_out.push_back(b_in);
@@ -85,70 +96,60 @@ void decode_file(std::string const & input_fn, bool const is_bgzf_input)
 {
   Tdec_array_buf buffer_in;     // input buffer
   std::vector<char> buffer_out; // output buffer
-  DecodeData dd;
+  DecodeData dd;                // data used to keep track of buffers while decoding
 
-  /* Input streams */
-  bool const is_stdin = input_fn == "-";
+  /// Input streams
   BGZF * in_bgzf{nullptr};
-  FILE * in{nullptr};
+  FILE * in_vcf{nullptr};
 
-  // open input file based on options
+  /// Open input file based on options
   if (is_bgzf_input)
-  {
-    in_bgzf = bgzf_open(input_fn.c_str(), "r");
-
-    if (in_bgzf == nullptr)
-    {
-      std::cerr << "[popvcf] ERROR: Opening bgzf file " << input_fn << std::endl;
-      std::exit(1);
-    }
-  }
+    in_bgzf = popvcf::open_bgzf(input_fn, "r");
   else
-  {
-    in = is_stdin ? stdin : fopen(input_fn.c_str(), "r");
-
-    if (in == nullptr)
-    {
-      std::cerr << "[popvcf] ERROR: Opening file " << input_fn << std::endl;
-      std::exit(1);
-    }
-  }
+    in_vcf = popvcf::open_vcf(input_fn, "r");
 
   buffer_out.reserve(16 * DEC_BUFFER_SIZE);
   dd.unique_fields.reserve(32 * 1024);
 
-  // read data
+  /// Read data
   if (is_bgzf_input)
     dd.bytes_read = bgzf_read(in_bgzf, buffer_in.data(), DEC_BUFFER_SIZE);
   else
-    dd.bytes_read = fread(buffer_in.data(), 1, DEC_BUFFER_SIZE, in);
+    dd.bytes_read = fread(buffer_in.data(), 1, DEC_BUFFER_SIZE, in_vcf);
 
-  // loop while there is some data to decode
+  /// Outer loop - loop while there is some data to decode from the input stream
   while (dd.bytes_read != 0)
   {
     decode_buffer(buffer_out, buffer_in, dd);
 
-    // write buffer_out to stdout
+    /// Write buffer_out to stdout
     fwrite(buffer_out.data(), 1, buffer_out.size(), stdout);
 
-    // clears, but does not deallocate
+    /// Clears output buffer, but does not deallocate
     buffer_out.resize(0);
 
-    // read more data
+    /// Read more data
     if (is_bgzf_input)
       dd.bytes_read = bgzf_read(in_bgzf, buffer_in.data() + dd.remaining_bytes, DEC_BUFFER_SIZE - dd.remaining_bytes);
     else
-      dd.bytes_read = fread(buffer_in.data() + dd.remaining_bytes, 1, DEC_BUFFER_SIZE - dd.remaining_bytes, in);
+      dd.bytes_read = fread(buffer_in.data() + dd.remaining_bytes, 1, DEC_BUFFER_SIZE - dd.remaining_bytes, in_vcf);
   } /// ends outer loop
 
-  fwrite(buffer_out.data(), 1, buffer_out.size(), stdout); // write to stdout
+  assert(buffer_out.size() == 0);
+
+  // fwrite(buffer_out.data(), 1, buffer_out.size(), stdout); // write to stdout
 
   if (is_bgzf_input)
-    bgzf_close(in_bgzf);
-  else if (not is_stdin)
-    fclose(in);
-}
+    popvcf::close_bgzf(in_bgzf);
+  else if (input_fn != "-")
+    fclose(in_vcf);
 
+  if (dd.remaining_bytes != 0)
+  {
+    std::cerr << "WARNING: After reading the input data we end inside of a field, the input may be truncated.\n"
+              << "Remaining bytes=" << dd.remaining_bytes << " != 0" << std::endl;
+  }
+}
 
 template void decode_buffer(std::vector<char> & buffer_out, Tdec_array_buf & buffer_in, DecodeData & dd);
 template void decode_buffer(std::string & buffer_out, Tdec_array_buf & buffer_in, DecodeData & dd);

@@ -14,7 +14,7 @@ namespace popvcf
 int subcmd_encode(paw::Parser & parser)
 {
   std::string vcf_fn{"-"};
-  std::string input_type{"v"};
+  std::string input_type{"g"};
   std::string output_fn{"-"};
   std::string output_mode{"w"};
   std::string output_type{"v"};
@@ -27,7 +27,11 @@ int subcmd_encode(paw::Parser & parser)
                                      "VCF",
                                      "Encode this VCF (or VCF.gz). If not set, read VCF from standard input.");
 
-    parser.parse_option(input_type, 'I', "input-type", "v|z", "Input type. v uncompressed VCF, z bgzipped VCF.");
+    parser.parse_option(input_type,
+                        'I',
+                        "input-type",
+                        "v|z|g",
+                        "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.");
     parser.parse_option(output_fn, 'o', "output", "VCF.gz", "Output filename.");
     parser.parse_option(output_compression_level,
                         'l',
@@ -59,11 +63,15 @@ int subcmd_encode(paw::Parser & parser)
 int subcmd_decode(paw::Parser & parser)
 {
   std::string popvcf_fn{};
-  std::string input_type{"v"};
+  std::string input_type{"g"};
 
   try
   {
-    parser.parse_option(input_type, 'I', "input-type", "v|z", "Input type. v uncompressed VCF, z bgzipped VCF.");
+    parser.parse_option(input_type,
+                        'I',
+                        "input-type",
+                        "v|z|g",
+                        "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.");
     parser.parse_positional_argument(popvcf_fn, "popVCF", "Decode this popVCF. Use '-' for standard input.");
     parser.finalize();
   }
