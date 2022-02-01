@@ -4,3 +4,4 @@
 *.vcf.gz
 *.popvcf
 *.popvcf.gz
+/benchmark/.*

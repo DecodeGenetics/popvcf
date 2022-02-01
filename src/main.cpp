@@ -20,6 +20,7 @@ int subcmd_encode(paw::Parser & parser)
   std::string output_type{"v"};
   int output_compression_level{-1};
   int compression_threads{1};
+  bool no_previous_line{false};
 
   try
   {
@@ -27,18 +28,25 @@ int subcmd_encode(paw::Parser & parser)
                                      "VCF",
                                      "Encode this VCF (or VCF.gz). If not set, read VCF from standard input.");
 
+    parser.parse_option(compression_threads, '@', "threads", "INT", "Output file compression level.");
     parser.parse_option(input_type,
                         'I',
                         "input-type",
                         "v|z|g",
                         "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.");
+
+    parser.parse_option(no_previous_line,
+                        ' ',
+                        "no-previous-line",
+                        "Set to skip using previous line. Makes the output work with normal tabix queries.");
+
     parser.parse_option(output_fn, 'o', "output", "VCF.gz", "Output filename.");
     parser.parse_option(output_compression_level,
                         'l',
                         "output-compress-level",
                         "INT",
                         "Output file compression level.");
-    parser.parse_option(compression_threads, '@', "threads", "INT", "Output file compression level.");
+
     parser.parse_option(output_type, 'O', "output-type", "v|z", "Output type. v uncompressed VCF, z bgzipped VCF.");
 
     parser.finalize();
@@ -56,7 +64,13 @@ int subcmd_encode(paw::Parser & parser)
   if (n > 3 && vcf_fn[n - 2] == 'g' && vcf_fn[n - 1] == 'z')
     input_type = "z";
 
-  encode_file(vcf_fn, input_type == "z", output_fn, output_mode, output_type == "z", compression_threads);
+  encode_file(vcf_fn,
+              input_type == "z",
+              output_fn,
+              output_mode,
+              output_type == "z",
+              compression_threads,
+              no_previous_line);
   return 0;
 }
 
