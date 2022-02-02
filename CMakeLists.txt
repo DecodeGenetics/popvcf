@@ -220,6 +220,15 @@ if(BUILD_DOCUMENTATION)
 endif()
 
 ###########
+# Testing #
+###########
+
+enable_testing(true)
+add_test(NAME test_popvcf COMMAND sh -c "set -e; sh ${CMAKE_CURRENT_SOURCE_DIR}/test/create_test_data.sh > test.vcf ; ${CMAKE_CURRENT_BINARY_DIR}/popvcf encode test.vcf -Oz > test.popvcf.gz ; ${CMAKE_CURRENT_BINARY_DIR}/popvcf decode test.popvcf.gz > test.new.vcf ; diff test.vcf test.new.vcf")
+
+set_tests_properties(test_popvcf PROPERTIES DEPENDS popvcf)
+
+###########
 ## Other ##
 ###########
 # Get the current working git branch

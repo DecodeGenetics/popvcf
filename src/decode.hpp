@@ -105,12 +105,6 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
       ++dd.field;
   } // ends inner loop
 
-  if (dd.b == 0)
-  {
-    throw std::runtime_error("ERROR: Encountered a field or line exceeding maximum buffer size of " +
-                             std::to_string(DEC_BUFFER_SIZE));
-  }
-
   // write data to the beginning of the input buffer
   dd.remaining_bytes = dd.i - dd.b;
   std::copy(&buffer_in[dd.b], &buffer_in[dd.b + dd.remaining_bytes], &buffer_in[0]);

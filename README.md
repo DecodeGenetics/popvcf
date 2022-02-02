@@ -4,7 +4,7 @@ popVCF losslessly encodes a multi sample VCF to reduce disk footprint. VCF field
 
 
 ### Building
-C++17 compiler (Tested on GCC 7+, Clang 10+) is required for building popVCF.
+Feature complete C++17 compiler is required for building popVCF, i.e. GCC 8/Clang 10 or newer.
 
 ```sh
 git clone --recursive <url> popvcf # Clone the repository
@@ -18,14 +18,14 @@ make -j3 popvcf
 ### Usage
 
 ```sh
-cat my.vcf | popvcf encode > my.popvcf
-cat my.popvcf | popvcf decode > my.1.vcf
-diff my.vcf my.old.vcf # Should be the same
+popvcf encode my.vcf > my.popvcf
+popvcf decode my.popvcf > my.new.vcf
+diff my.vcf my.new.vcf # Should be the same
 
 # It is also possible to bgzip and index the output
-cat my.vcf | popvcf encode | bgzip > my.popvcf.gz
+popvcf encode my.vcf -Oz > my.popvcf.gz
 tabix my.popvcf.gz
-zcat my.popvcf.gz | popvcf decode > my.2.vcf
+popvcf decode my.popvcf.gz > my.new2.vcf
 ```
 
 ### License

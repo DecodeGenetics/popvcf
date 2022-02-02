@@ -14,7 +14,7 @@ awk -v n=${n} 'BEGIN{
   }
 }'
 
-awk -v n=${n} -v n_alts=20 'BEGIN{
+awk -v n=${n} -v n_alts=7 'BEGIN{
   alt="AC"
   printf "\nchr1\t"n
   printf "\t.\tA"

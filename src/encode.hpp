@@ -185,12 +185,6 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
       ++ed.field;
   } // ends inner loop
 
-  if (ed.b == 0)
-  {
-    throw std::runtime_error("ERROR: Encountered a field or line exceeding maximum buffer size of " +
-                             std::to_string(ENC_BUFFER_SIZE));
-  }
-
   // copy the remaining data to the beginning of the input buffer
   ed.remaining_bytes = ed.i - ed.b;
   std::copy(&buffer_in[ed.b], &buffer_in[ed.b + ed.remaining_bytes], &buffer_in[0]);
