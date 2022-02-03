@@ -5,3 +5,4 @@
 *.popvcf
 *.popvcf.gz
 /benchmark/.*
+*.tbi

@@ -25,12 +25,12 @@ void encode_file(std::string const & input_fn,
                  int const compression_threads,
                  bool const no_previous_line)
 {
-  Tarray_buf buffer_in;  // input buffer
-  Tarray_buf buffer_out; // output buffer
-  EncodeData ed;         // encode data struct
+  Tarray_buf buffer_in;         // input buffer
+  std::vector<char> buffer_out; // output buffer
+  EncodeData ed;                // encode data struct
   ed.no_previous_line = no_previous_line;
 
-  // Open input file streams
+  /// Open input file streams
   BGZF * in_bgzf{nullptr}; // bgzf input stream
   FILE * in_vcf{nullptr};  // vcf input stream
 
@@ -39,7 +39,7 @@ void encode_file(std::string const & input_fn,
   else
     in_vcf = popvcf::open_vcf(input_fn, "r");
 
-  // Open output file streams
+  /// Open output file streams
   BGZF * out_bgzf{nullptr}; // bgzf output stream
   FILE * out_vcf{nullptr};  // vcf output stream
 
@@ -70,26 +70,26 @@ void encode_file(std::string const & input_fn,
     // write output buffer
     if (out_bgzf != nullptr)
     {
-      long const written_bytes = bgzf_write(out_bgzf, buffer_out.data(), ed.o);
+      long const written_bytes = bgzf_write(out_bgzf, buffer_out.data(), buffer_out.size());
 
-      if (written_bytes != static_cast<long>(ed.o))
+      if (written_bytes != static_cast<long>(buffer_out.size()))
       {
         std::cerr << "[popvcf] WARNING: Problem writing bgzf data to " << output_fn << " " << written_bytes
-                  << " bytes written but expected " << ed.o << " bytes." << std::endl;
+                  << " bytes written but expected " << buffer_out.size() << " bytes." << std::endl;
       }
     }
     else
     {
-      fwrite(buffer_out.data(), 1, ed.o, out_vcf); // write output buffer
+      fwrite(buffer_out.data(), 1, buffer_out.size(), out_vcf); // write output buffer
     }
 
-    ed.o = 0; // clear output index
+    buffer_out.resize(0);
 
     // attempt to read more data from input
     if (is_bgzf_input)
-      ed.bytes_read = bgzf_read(in_bgzf, buffer_in.data() + ed.remaining_bytes, ENC_BUFFER_SIZE - ed.remaining_bytes);
+      ed.bytes_read += bgzf_read(in_bgzf, buffer_in.data() + ed.bytes_read, ENC_BUFFER_SIZE - ed.bytes_read);
     else
-      ed.bytes_read = fread(buffer_in.data() + ed.remaining_bytes, 1, ENC_BUFFER_SIZE - ed.remaining_bytes, in_vcf);
+      ed.bytes_read += fread(buffer_in.data() + ed.bytes_read, 1, ENC_BUFFER_SIZE - ed.bytes_read, in_vcf);
   }
 
   /// Close input streams
@@ -103,12 +103,6 @@ void encode_file(std::string const & input_fn,
     popvcf::close_bgzf(out_bgzf);
   else if (output_fn != "-")
     fclose(out_vcf);
-
-  if (ed.remaining_bytes != 0)
-  {
-    std::cerr << "WARNING: After reading the input data we end inside of a field, the input may be truncated.\n"
-              << "Remaining bytes=" << ed.remaining_bytes << " != 0" << std::endl;
-  }
 }
 
 /*

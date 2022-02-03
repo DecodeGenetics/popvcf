@@ -78,6 +78,7 @@ int subcmd_decode(paw::Parser & parser)
 {
   std::string popvcf_fn{};
   std::string input_type{"g"};
+  std::string region{};
 
   try
   {
@@ -86,6 +87,7 @@ int subcmd_decode(paw::Parser & parser)
                         "input-type",
                         "v|z|g",
                         "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.");
+    parser.parse_option(region, 'r', "region", "chrN:A-B", "Fetch region/interval to decode. Requires .tbi index.");
     parser.parse_positional_argument(popvcf_fn, "popVCF", "Decode this popVCF. Use '-' for standard input.");
     parser.finalize();
   }
@@ -96,10 +98,14 @@ int subcmd_decode(paw::Parser & parser)
 
   long const n = popvcf_fn.size();
 
-  if (n > 3 && popvcf_fn[n - 2] == 'g' && popvcf_fn[n - 1] == 'z')
+  if (input_type == "g" && n > 3 && popvcf_fn[n - 2] == 'g' && popvcf_fn[n - 1] == 'z')
     input_type = "z";
 
-  decode_file(popvcf_fn, input_type == "z");
+  if (region.empty())
+    decode_file(popvcf_fn, input_type == "z");
+  else
+    decode_region(popvcf_fn, region);
+
   return 0;
 }
 
