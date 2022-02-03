@@ -13,9 +13,10 @@ if(NOT PAW_CMAKE_BUILD_TYPE)
   set(PAW_CMAKE_BUILD_TYPE "RELEASE" CACHE STRING "Choose the type of build for paw." FORCE)
 endif()
 
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message (STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/")
+set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake/")
+set (STATIC_DIR "" CACHE STRING "Build in 'static' mode and include libraries in this directory.")
 
 ############
 ## popvcf ##
@@ -144,40 +145,52 @@ set_property(TARGET libdeflate PROPERTY IMPORTED_LOCATION ${libdeflate_location}
 add_dependencies(libdeflate project_libdeflate)
 target_link_libraries(popvcf PUBLIC libdeflate)
 
-#### libbz2
-#find_package (BZip2 REQUIRED)
-#target_link_libraries(popvcf PUBLIC ${BZIP2_LIBRARIES})
-#
-#### lzma
-#find_package (LibLZMA)
-#
-#if (LIBLZMA_FOUND)
-#  target_link_libraries(popvcf PUBLIC ${LIBLZMA_LIBRARIES})
-#endif()
-
 ### parallel_hashmap ###
 target_include_directories(popvcf_objects SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/submodules/parallel-hashmap)
 
 ### threads ###
-find_package(Threads)
-target_link_libraries(popvcf PUBLIC ${CMAKE_THREAD_LIBS_INIT})
+if (STATIC_DIR STREQUAL "")
+    find_package(Threads)
+    target_link_libraries(popvcf PUBLIC ${CMAKE_THREAD_LIBS_INIT})
+else()
+    target_link_libraries(popvcf PUBLIC "${STATIC_DIR}/libpthread.a")
+endif()
 
 ### rt and filesystem ###
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     message(STATUS "Using GCC")
-    target_link_libraries(popvcf PUBLIC "rt")
-    # target_link_libraries(popvcf PUBLIC "stdc++fs")
-  elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+
+    if (STATIC_DIR STREQUAL "")
+        target_link_libraries(popvcf PUBLIC "rt")
+        # target_link_libraries(popvcf PUBLIC "stdc++fs")
+    else()
+        target_link_libraries(popvcf PUBLIC "${STATIC_DIR}/librt.a")
+    endif()
+elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     message(STATUS "Using Clang")
-  else()
+else()
     message(WARNING "Unsupported compiler")
-  endif ()
+endif ()
 
 ### zlib ###
 message (STATUS "Checking for zlib")
 find_package(ZLIB REQUIRED)
 target_include_directories(popvcf_objects SYSTEM PUBLIC ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(popvcf PUBLIC ${ZLIB_LIBRARIES})
+
+if (STATIC_DIR STREQUAL "")
+    target_link_libraries(popvcf PUBLIC ${ZLIB_LIBRARIES})
+else()
+    target_link_libraries(popvcf PUBLIC "${STATIC_DIR}/libz.a")
+endif()
+
+### GCC ###
+
+# LOCAL binaries have static GCC, PREBUILT are all static
+if (STATIC_DIR STREQUAL "")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+else ()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static")
+endif ()
 
 ################
 # clang-format #
