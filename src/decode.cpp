@@ -6,6 +6,7 @@
 #include <cstdio>   // std::stdin
 #include <cstring>  // std::memmove
 #include <iostream> // std::cerr
+#include <memory>
 #include <stdexcept>
 #include <string> // std::string
 #include <vector> // std::vector
@@ -27,8 +28,8 @@ void decode_file(std::string const & input_fn, bool const is_bgzf_input)
   DecodeData dd;                // data used to keep track of buffers while decoding
 
   /// Input streams
-  BGZF * in_bgzf{nullptr};
-  FILE * in_vcf{nullptr};
+  popvcf::bgzf_ptr in_bgzf(nullptr, popvcf::close_bgzf);
+  popvcf::file_ptr in_vcf(nullptr, popvcf::close_vcf_nop);
 
   /// Open input file based on options
   if (is_bgzf_input)
@@ -37,45 +38,42 @@ void decode_file(std::string const & input_fn, bool const is_bgzf_input)
     in_vcf = popvcf::open_vcf(input_fn, "r");
 
   buffer_out.reserve(16 * DEC_BUFFER_SIZE);
-  dd.unique_fields.reserve(32 * 1024);
 
-  /// Read data
+  /// Read first batch of data
   if (is_bgzf_input)
-    dd.bytes_read = bgzf_read(in_bgzf, buffer_in.data(), DEC_BUFFER_SIZE);
+    dd.bytes_read = bgzf_read(in_bgzf.get(), buffer_in.data(), DEC_BUFFER_SIZE);
   else
-    dd.bytes_read = fread(buffer_in.data(), 1, DEC_BUFFER_SIZE, in_vcf);
+    dd.bytes_read = fread(buffer_in.data(), 1, DEC_BUFFER_SIZE, in_vcf.get());
+
+  long new_bytes = dd.bytes_read;
 
   /// Outer loop - loop while there is some data to decode from the input stream
-  while (dd.bytes_read != 0)
+  while (new_bytes != 0)
   {
     decode_buffer(buffer_out, buffer_in, dd);
 
     /// Write buffer_out to stdout
     fwrite(buffer_out.data(), 1, buffer_out.size(), stdout);
-
-    /// Clears output buffer, but does not deallocate
-    buffer_out.resize(0);
+    buffer_out.resize(0); // Clears output buffer, but does not deallocate
+    new_bytes = -static_cast<long>(dd.bytes_read);
 
     /// Read more data
     if (is_bgzf_input)
-      dd.bytes_read = bgzf_read(in_bgzf, buffer_in.data() + dd.remaining_bytes, DEC_BUFFER_SIZE - dd.remaining_bytes);
+      dd.bytes_read += bgzf_read(in_bgzf.get(), buffer_in.data() + dd.bytes_read, DEC_BUFFER_SIZE - dd.bytes_read);
     else
-      dd.bytes_read = fread(buffer_in.data() + dd.remaining_bytes, 1, DEC_BUFFER_SIZE - dd.remaining_bytes, in_vcf);
+      dd.bytes_read += fread(buffer_in.data() + dd.bytes_read, 1, DEC_BUFFER_SIZE - dd.bytes_read, in_vcf.get());
+
+    new_bytes += dd.bytes_read;
   } /// ends outer loop
 
   assert(buffer_out.size() == 0);
 
-  // fwrite(buffer_out.data(), 1, buffer_out.size(), stdout); // write to stdout
-
-  if (is_bgzf_input)
-    popvcf::close_bgzf(in_bgzf);
-  else if (input_fn != "-")
-    fclose(in_vcf);
-
-  if (dd.remaining_bytes != 0)
+  if (dd.bytes_read != 0)
   {
-    std::cerr << "WARNING: After reading the input data we end inside of a field, the input may be truncated.\n"
-              << "Remaining bytes=" << dd.remaining_bytes << " != 0" << std::endl;
+    std::cerr << "[popvcf] WARNING: Unexpected ending of the VCF data, possibly the file is truncated.\n";
+
+    // write output buffer
+    fwrite(buffer_in.data(), 1, dd.bytes_read, stdout); // write output buffer
   }
 }
 
@@ -102,7 +100,7 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
 
     if (auto dash = region.find('-', colon + 1); dash == std::string::npos)
     {
-      auto ret = std::from_chars(&region[colon + 1], &region[region.size()], begin);
+      auto ret = std::from_chars(region.data() + colon + 1, region.data() + region.size(), begin);
 
       if (ret.ec != std::errc())
         throw std::runtime_error("Could not parse region: " + region);
@@ -111,12 +109,12 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
     }
     else
     {
-      auto ret_begin = std::from_chars(&region[colon + 1], &region[dash], begin);
+      auto ret_begin = std::from_chars(region.data() + colon + 1, region.data() + dash, begin);
 
       if (ret_begin.ec != std::errc())
         throw std::runtime_error("Could not parse region: " + region);
 
-      auto ret_end = std::from_chars(&region[dash + 1], &region[region.size()], end);
+      auto ret_end = std::from_chars(region.data() + dash + 1, region.data() + region.size(), end);
 
       if (ret_end.ec != std::errc())
         throw std::runtime_error("Could not parse region: " + region);
@@ -126,33 +124,29 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
     dd.end = end;
   }
 
+  /// Determine the region to query
+  std::string safe_region = chrom;
+
+  if (begin >= 0)
+  {
+    safe_region.push_back(':');
+    safe_region.append(std::to_string(std::max(1l, (begin / 10000l) * 10000l)));
+    safe_region.push_back('-');
+    safe_region.append(std::to_string(end));
+  }
+
   /// Input streams
-  htsFile * in_bgzf = hts_open(popvcf_fn.c_str(), "r"); // open popvcf.gz
-
-  if (in_bgzf == nullptr)
-  {
-    std::cerr << "ERROR: Could not open file " << popvcf_fn << std::endl;
-    hts_close(in_bgzf);
-    std::exit(1);
-  }
-
-  tbx_t * in_tbx = tbx_index_load(popvcf_fn.c_str()); // open popvcf.gz.tbi
-
-  if (in_tbx == nullptr)
-  {
-    std::cerr << "ERROR: Could not open file " << popvcf_fn << std::endl;
-    std::exit(1);
-  }
+  popvcf::hts_file_ptr in_bgzf = popvcf::open_hts_file(popvcf_fn.c_str(), "r");            // open popvcf.gz
+  popvcf::tbx_t_ptr in_tbx = popvcf::open_tbx_t(popvcf_fn.c_str());                        // open popvcf.gz.tbi
+  popvcf::hts_itr_t_ptr in_it = popvcf::open_hts_itr_t(in_tbx.get(), safe_region.c_str()); // query region
 
   /// Copy the header lines
   kstring_t str = {0, 0, 0};
 
-  while (hts_getline(in_bgzf, KS_SEP_LINE, &str) >= 0)
+  while (hts_getline(in_bgzf.get(), KS_SEP_LINE, &str) >= 0)
   {
     if (!str.l || str.s[0] != in_tbx->conf.meta_char)
-    {
       break;
-    }
 
     std::copy(str.s, str.s + str.l, std::back_inserter(buffer_out));
     buffer_out.push_back('\n');
@@ -161,38 +155,24 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
   /// Write buffer_out to stdout
   fwrite(buffer_out.data(), 1, buffer_out.size(), stdout);
 
+  // return here, after writing header, if there are no records in the region
+  if (in_it == nullptr)
+  {
+    free(str.s);
+    return;
+  }
+
   /// Clears output buffer, but does not deallocate
   buffer_out.resize(0);
 
-  /// Query the region
-  std::string safe_region = chrom;
-
-  if (begin >= 0)
-  {
-    safe_region.push_back(':');
-    safe_region.append(std::to_string((begin / 10000) * 10000));
-    safe_region.push_back('-');
-    safe_region.append(std::to_string(end));
-  }
-
-  hts_itr_t * in_it = tbx_itr_querys(in_tbx, safe_region.c_str());
-
-  if (in_it == nullptr)
-  {
-    std::cerr << "ERROR: Could query region " << safe_region << std::endl;
-    hts_close(in_bgzf);
-    tbx_destroy(in_tbx);
-    std::exit(1);
-  }
-
-  int ret = tbx_itr_next(in_bgzf, in_tbx, in_it, &str);
+  int ret = tbx_itr_next(in_bgzf.get(), in_tbx.get(), in_it.get(), &str);
 
   while (ret > 0)
   {
-    buffer_in.resize(dd.remaining_bytes);
+    buffer_in.resize(dd.i);
     std::copy(str.s, str.s + str.l, std::back_inserter(buffer_in));
     buffer_in.push_back('\n');
-    dd.bytes_read = str.l + 1;
+    dd.bytes_read = dd.i + str.l + 1;
 
     decode_buffer(buffer_out, buffer_in, dd);
 
@@ -207,15 +187,10 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
       break;
 
     /// Read more data
-    ret = tbx_itr_next(in_bgzf, in_tbx, in_it, &str);
+    ret = tbx_itr_next(in_bgzf.get(), in_tbx.get(), in_it.get(), &str);
   }
 
-  hts_close(in_bgzf);
-  tbx_destroy(in_tbx);
-  tbx_itr_destroy(in_it);
+  free(str.s);
 }
-
-template void decode_buffer(std::vector<char> & buffer_out, Tdec_array_buf & buffer_in, DecodeData & dd);
-template void decode_buffer(std::string & buffer_out, Tdec_array_buf & buffer_in, DecodeData & dd);
 
 } // namespace popvcf

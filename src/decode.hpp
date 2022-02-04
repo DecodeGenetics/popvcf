@@ -27,7 +27,6 @@ class DecodeData
 {
 public:
   std::size_t bytes_read{0};
-  std::size_t remaining_bytes{0};
   std::size_t field{0};   // current vcf field
   std::size_t b{0};       // begin index in buffer_in
   std::size_t i{b};       // index in buffer_in
@@ -71,7 +70,7 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
   std::size_t constexpr N_FIELDS_SITE_DATA{9};
 
   // inner loop - Loops over each character in the input buffer
-  while (dd.i < (dd.bytes_read + dd.remaining_bytes))
+  while (dd.i < dd.bytes_read)
   {
     char const b_in = buffer_in[dd.i];
 
@@ -196,10 +195,10 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
   } // ends inner loop
 
   // write data to the beginning of the input buffer
-  dd.remaining_bytes = dd.i - dd.b;
-  std::copy(&buffer_in[dd.b], &buffer_in[dd.b + dd.remaining_bytes], &buffer_in[0]);
+  std::copy(&buffer_in[dd.b], &buffer_in[dd.i], &buffer_in[0]);
+  dd.i = dd.i - dd.b;
   dd.b = 0;
-  dd.i = dd.remaining_bytes;
+  dd.bytes_read = dd.i;
 }
 
 //! Decode an encoded popVCF
