@@ -32,9 +32,9 @@ run ()
 
 
 echo "== Compression times =="
-run "bgzip -c -f test.vcf ${level} > test.vcf.gz"
-run "${popvcf} encode test.vcf > test.vcf.popvcf"
-run "${popvcf} encode test.vcf ${level} -Oz > test.vcf.popvcf.gz"
+run "bgzip --stdout --force --threads 1 test.vcf ${level} > test.vcf.gz"
+run "${popvcf} encode test.vcf -o test.vcf.popvcf"
+run "${popvcf} encode test.vcf ${level} -Oz -o test.vcf.popvcf.gz"
 run "spvcf encode --quiet --no-squeeze test.vcf > test.vcf.spvcf"
 run "spvcf encode --quiet --no-squeeze test.vcf | bgzip -c ${level} > test.vcf.spvcf.gz"
 
@@ -46,7 +46,7 @@ run "${popvcf} decode test.vcf.popvcf.gz > test.vcf.popvcf.gz.vcf"
 md5sum test.vcf.popvcf.gz.vcf ; rm -f test.vcf.popvcf.gz.vcf
 run "bgzip -dc test.vcf.spvcf.gz | spvcf decode --quiet > test.vcf.spvcf.gz.vcf"
 md5sum test.vcf.spvcf.gz.vcf ; rm -f test.vcf.spvcf.gz.vcf
-run "bgzip -c -d -k -f test.vcf.gz > test.vcf.gz.vcf"
+run "bgzip -dc test.vcf.gz > test.vcf.gz.vcf"
 md5sum test.vcf.gz.vcf ; rm -f test.vcf.gz.vcf
 
 echo "== Index construction times =="
@@ -67,4 +67,4 @@ original_size=$(find -L . -name "test.vcf" -printf "%s\n")
 find . -name "test.*gz" -printf "%f\t%s\n" | awk -v os="${original_size}" '{print $1"\t"$2"\t"os/$2}'
 
 # cleanup
-echo test.* | tr ' ' '\n' | grep -vP "^test.vcf$" | grep -vP "^test.vcf.gz$" | xargs rm
+#echo test.* | tr ' ' '\n' | grep -vP "^test.vcf$" | grep -vP "^test.vcf.gz$" | xargs rm

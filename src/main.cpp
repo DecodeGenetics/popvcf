@@ -28,12 +28,12 @@ int subcmd_encode(paw::Parser & parser)
                                      "VCF",
                                      "Encode this VCF (or VCF.gz). If not set, read VCF from standard input.");
 
-    parser.parse_option(compression_threads, '@', "threads", "INT", "Output file compression level.");
+    parser.parse_option(compression_threads, '@', "threads", "Output file compression level.", "INT");
     parser.parse_option(input_type,
                         'I',
                         "input-type",
-                        "v|z|g",
-                        "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.");
+                        "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.",
+                        "v|z|g");
 
     parser.parse_option(no_previous_line,
                         ' ',
@@ -44,11 +44,10 @@ int subcmd_encode(paw::Parser & parser)
     parser.parse_option(output_compression_level,
                         'l',
                         "output-compress-level",
-                        "INT",
-                        "Output file compression level.");
+                        "Output file compression level.",
+                        "INT");
 
-    parser.parse_option(output_type, 'O', "output-type", "v|z", "Output type. v uncompressed VCF, z bgzipped VCF.");
-
+    parser.parse_option(output_type, 'O', "output-type", "Output type. v uncompressed VCF, z bgzipped VCF.", "v|z");
     parser.finalize();
   }
   catch (paw::exception::missing_positional_argument &)
@@ -85,9 +84,9 @@ int subcmd_decode(paw::Parser & parser)
     parser.parse_option(input_type,
                         'I',
                         "input-type",
-                        "v|z|g",
-                        "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.");
-    parser.parse_option(region, 'r', "region", "chrN:A-B", "Fetch region/interval to decode. Requires .tbi index.");
+                        "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.",
+                        "v|z|g");
+    parser.parse_option(region, 'r', "region", "Fetch region/interval to decode. Requires .tbi index.", "chrN:A-B");
     parser.parse_positional_argument(popvcf_fn, "popVCF", "Decode this popVCF. Use '-' for standard input.");
     parser.finalize();
   }

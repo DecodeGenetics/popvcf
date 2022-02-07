@@ -25,7 +25,7 @@ void encode_file(std::string const & input_fn,
                  int const compression_threads,
                  bool const no_previous_line)
 {
-  Tarray_buf buffer_in;         // input buffer
+  Tenc_array_buf buffer_in;     // input buffer
   std::vector<char> buffer_out; // output buffer
   EncodeData ed;                // encode data struct
   ed.no_previous_line = no_previous_line;
@@ -57,11 +57,11 @@ void encode_file(std::string const & input_fn,
 
   /// Read first buffer of input data
   if (is_bgzf_input)
-    ed.bytes_read = bgzf_read(in_bgzf.get(), buffer_in.data(), ENC_BUFFER_SIZE);
+    ed.in_size = bgzf_read(in_bgzf.get(), buffer_in.data(), ENC_BUFFER_SIZE);
   else
-    ed.bytes_read = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, in_vcf.get());
+    ed.in_size = fread(buffer_in.data(), 1, ENC_BUFFER_SIZE, in_vcf.get());
 
-  long new_bytes = ed.bytes_read;
+  long new_bytes = ed.in_size;
 
   // loop until all data has been read
   while (new_bytes != 0)
@@ -76,26 +76,26 @@ void encode_file(std::string const & input_fn,
       fwrite(buffer_out.data(), 1, buffer_out.size(), out_vcf.get()); // write output buffer
 
     buffer_out.resize(0);
-    new_bytes = -static_cast<long>(ed.bytes_read);
+    new_bytes = -static_cast<long>(ed.in_size);
 
     // attempt to read more data from input
     if (is_bgzf_input)
-      ed.bytes_read += bgzf_read(in_bgzf.get(), buffer_in.data() + ed.bytes_read, ENC_BUFFER_SIZE - ed.bytes_read);
+      ed.in_size += bgzf_read(in_bgzf.get(), buffer_in.data() + ed.in_size, ENC_BUFFER_SIZE - ed.in_size);
     else
-      ed.bytes_read += fread(buffer_in.data() + ed.bytes_read, 1, ENC_BUFFER_SIZE - ed.bytes_read, in_vcf.get());
+      ed.in_size += fread(buffer_in.data() + ed.in_size, 1, ENC_BUFFER_SIZE - ed.in_size, in_vcf.get());
 
-    new_bytes += ed.bytes_read;
+    new_bytes += ed.in_size;
   }
 
-  if (ed.bytes_read != 0)
+  if (ed.in_size != 0)
   {
     std::cerr << "[popvcf] WARNING: Unexpected ending of the VCF data, possibly the file is truncated.\n";
 
     // write output buffer
     if (out_bgzf != nullptr)
-      popvcf::write_bgzf(out_bgzf.get(), buffer_in.data(), ed.bytes_read);
+      popvcf::write_bgzf(out_bgzf.get(), buffer_in.data(), ed.in_size);
     else
-      fwrite(buffer_in.data(), 1, ed.bytes_read, out_vcf.get()); // write output buffer
+      fwrite(buffer_in.data(), 1, ed.in_size, out_vcf.get()); // write output buffer
   }
 }
 
