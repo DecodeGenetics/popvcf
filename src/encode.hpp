@@ -12,21 +12,15 @@
 
 namespace popvcf
 {
-//! Buffer size when encoding
-long constexpr ENC_BUFFER_SIZE{4 * 65536};
-
-//! Data type of an array buffer
-using Tarray_buf = std::array<char, ENC_BUFFER_SIZE>; //!< Buffer type
-
 class EncodeData
 {
 public:
-  std::size_t bytes_read{0};
-  std::size_t field{0};         // current vcf field
-  std::size_t b{0};             // begin index in buffer_in
-  std::size_t i{b};             // index in buffer_in
+  std::size_t field{0};         //!< current vcf field.
+  std::size_t in_size{0};       //!< Size of inut buffer.
+  std::size_t b{0};             //!< begin index in buffer_in
+  std::size_t i{b};             //!< index in buffer_in
   bool header_line{true};       //!< True iff in header line
-  bool no_previous_line{false}; //! Set to skip using previous line
+  bool no_previous_line{false}; //!< Set to skip using previous line
 
   std::string prev_contig{};
   int64_t prev_pos{0};
@@ -65,28 +59,28 @@ public:
   }
 };
 
-template <typename Tint, typename Tbuffer_out>
-inline void to_chars(Tint char_val, Tbuffer_out & buffer_out)
+template <typename Tbuffer_in>
+inline void set_input_size(Tbuffer_in & buffer_in, EncodeData & ed)
 {
-  while (char_val >= CHAR_SET_SIZE)
-  {
-    auto rem = char_val % CHAR_SET_SIZE;
-    char_val = char_val / CHAR_SET_SIZE;
-    buffer_out.push_back(int_to_ascii(rem));
-  }
+  ed.in_size = buffer_in.size();
+}
 
-  assert(char_val < CHAR_SET_SIZE);
-  buffer_out.push_back(int_to_ascii(char_val));
+template <>
+inline void set_input_size(Tenc_array_buf & /*buffer_in*/, EncodeData & /*dd*/)
+{
+  // Do nothing.
+  // NOTE: dd.in_size must be set prior to calling decode_buffer in arrays
 }
 
 //! Encodes an input buffer. Output is written in \a buffer_out.
 template <typename Tbuffer_out, typename Tbuffer_in>
 inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, EncodeData & ed)
 {
-  buffer_out.reserve(ENC_BUFFER_SIZE / 2);
+  set_input_size(buffer_in, ed);
+  buffer_out.reserve(ENC_BUFFER_SIZE);
   std::size_t constexpr N_FIELDS_SITE_DATA{9}; // how many fields of the VCF contains site data
 
-  while (ed.i < ed.bytes_read)
+  while (ed.i < ed.in_size)
   {
     char const b_in = buffer_in[ed.i];
 
@@ -123,8 +117,8 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
 
     if (ed.header_line || ed.field < N_FIELDS_SITE_DATA)
     {
-      ++ed.i; // adds '\t' or '\n'
-      std::copy(&buffer_in[ed.b], &buffer_in[ed.i], std::back_inserter(buffer_out));
+      ++ed.i; // adds '\t' or '\n' and then insert the field to the output buffer
+      buffer_out.insert(buffer_out.end(), &buffer_in[ed.b], &buffer_in[ed.i]);
     }
     else
     {
@@ -164,8 +158,8 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
           if (prev_find_it == ed.prev_map_to_unique_fields.end())
           {
             /* Case 1: Field is unique in the current line and is not in the previous line. */
-            ++ed.i;                                                                        // adds '\t' or '\n'
-            std::copy(&buffer_in[ed.b], &buffer_in[ed.i], std::back_inserter(buffer_out)); // just copy as is
+            ++ed.i; // adds '\t' or '\n'
+            buffer_out.insert(buffer_out.end(), &buffer_in[ed.b], &buffer_in[ed.i]);
           }
           else
           {
@@ -212,17 +206,12 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
       ++ed.field;
   } // ends inner loop
 
-  if (ed.b == 0)
-  {
-    throw std::runtime_error("ERROR: Encountered a field or line exceeding maximum buffer size of " +
-                             std::to_string(ENC_BUFFER_SIZE));
-  }
-
   // copy the remaining data to the beginning of the input buffer
   std::copy(&buffer_in[ed.b], &buffer_in[ed.i], &buffer_in[0]);
   ed.i = ed.i - ed.b;
   ed.b = 0;
-  ed.bytes_read = ed.i;
+  ed.in_size = ed.i;
+  resize_input_buffer(buffer_in, ed.i);
 }
 
 //! Encode a gzipped file and write to stdout

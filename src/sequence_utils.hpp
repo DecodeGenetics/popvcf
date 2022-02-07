@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cassert>
 #include <string>
 #include <string_view>
@@ -10,6 +11,15 @@ namespace popvcf
 uint32_t constexpr CHAR_SET_SIZE = 69;
 uint32_t constexpr CHAR_SET_SIZE_2BYTES = CHAR_SET_SIZE * CHAR_SET_SIZE;
 char constexpr CHAR_SET_MIN = ':';
+
+long constexpr ENC_BUFFER_SIZE{4 * 65536}; //!< Buffer size of arrays when encoding
+long constexpr DEC_BUFFER_SIZE{8 * 65536}; //!< Buffer size of arrays when decoding
+
+//! Data type of an encoding array buffer
+using Tenc_array_buf = std::array<char, ENC_BUFFER_SIZE>;
+
+//! Data type of a decoding array buffer
+using Tdec_array_buf = std::array<char, DEC_BUFFER_SIZE>;
 
 inline char int_to_ascii(uint32_t in)
 {
@@ -73,7 +83,39 @@ inline uint32_t ascii_cstring_to_int(char const * b, char const * e)
   return out;
 }
 
+template <typename Tint, typename Tbuffer_out>
+inline void to_chars(Tint char_val, Tbuffer_out & buffer_out)
+{
+  while (char_val >= CHAR_SET_SIZE)
+  {
+    auto rem = char_val % CHAR_SET_SIZE;
+    char_val = char_val / CHAR_SET_SIZE;
+    buffer_out.push_back(int_to_ascii(rem));
+  }
+
+  assert(char_val < CHAR_SET_SIZE);
+  buffer_out.push_back(int_to_ascii(char_val));
+}
+
 template <typename Tstring>
 std::vector<std::string_view> split_string(Tstring const & str, char const delimiter);
+
+template <typename Tbuffer_in>
+inline void resize_input_buffer(Tbuffer_in & buffer_in, std::size_t const new_size)
+{
+  buffer_in.resize(new_size);
+}
+
+template <>
+inline void resize_input_buffer(Tdec_array_buf & /*buffer_in*/, std::size_t const /*new_size*/)
+{
+  // Do nothing. Arrays are not resized
+}
+
+template <>
+inline void resize_input_buffer(Tenc_array_buf & /*buffer_in*/, std::size_t const /*new_size*/)
+{
+  // Do nothing. Arrays are not resized
+}
 
 } // namespace popvcf

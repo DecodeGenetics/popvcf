@@ -32,9 +32,9 @@ run ()
 
 
 echo "== Compression times =="
-run "bgzip -c -f test.vcf ${level} > test.vcf.gz"
-run "${popvcf} encode test.vcf > test.vcf.popvcf"
-run "${popvcf} encode test.vcf ${level} -Oz > test.vcf.popvcf.gz"
+run "bgzip --stdout --force --threads 1 test.vcf ${level} > test.vcf.gz"
+run "${popvcf} encode test.vcf -o test.vcf.popvcf"
+run "${popvcf} encode test.vcf ${level} -Oz -o test.vcf.popvcf.gz"
 run "spvcf encode --quiet --no-squeeze test.vcf > test.vcf.spvcf"
 run "spvcf encode --quiet --no-squeeze test.vcf | bgzip -c ${level} > test.vcf.spvcf.gz"
 
@@ -46,23 +46,19 @@ run "${popvcf} decode test.vcf.popvcf.gz > test.vcf.popvcf.gz.vcf"
 md5sum test.vcf.popvcf.gz.vcf ; rm -f test.vcf.popvcf.gz.vcf
 run "bgzip -dc test.vcf.spvcf.gz | spvcf decode --quiet > test.vcf.spvcf.gz.vcf"
 md5sum test.vcf.spvcf.gz.vcf ; rm -f test.vcf.spvcf.gz.vcf
-#run "${popvcf} decode test.vcf.popvcf.l9.gz > test.vcf.popvcf.l9.gz.vcf"
-#md5sum test.vcf.popvcf.l9.gz.vcf ; rm -f test.vcf.popvcf.l9.gz.vcf
-
-run "bgzip -c -d -k -f test.vcf.gz > test.vcf.gz.vcf"
+run "bgzip -dc test.vcf.gz > test.vcf.gz.vcf"
 md5sum test.vcf.gz.vcf ; rm -f test.vcf.gz.vcf
-
 
 echo "== Index construction times =="
 run "tabix -p vcf -f test.vcf.gz"
 run "tabix -p vcf -f test.vcf.popvcf.gz"
 run "tabix -p vcf -f test.vcf.spvcf.gz"
-#run "tabix -f test.vcf.popvcf.l9.gz"
 
-#echo "== Query times =="
-#run "tabix test.vcf.gz chr20:17625500-17625600 > /dev/null"
-#run "tabix test.vcf.popvcf.gz chr20:17625500-17625600 | ${popvcf} decode - > /dev/null"
-#run "tabix test.vcf.popvcf.l9.gz chr20:17625500-17625600 | ${popvcf} decode - > /dev/null"
+echo "== Query times =="
+region=$(grep -v ^# test.vcf | cut -f1,2 | head -n 20 | tail -n 1 | awk '{print $1":"$2"-"$2+100}')
+run "tabix test.vcf.gz ${region} > /dev/null"
+run "${popvcf} decode test.vcf.popvcf.gz --region=${region} > /dev/null"
+run "spvcf tabix test.vcf.spvcf.gz ${region} | spvcf decode - > /dev/null"
 
 ls -lh test.*gz
 ls -l test.*gz
@@ -71,4 +67,4 @@ original_size=$(find -L . -name "test.vcf" -printf "%s\n")
 find . -name "test.*gz" -printf "%f\t%s\n" | awk -v os="${original_size}" '{print $1"\t"$2"\t"os/$2}'
 
 # cleanup
-echo test.* | tr ' ' '\n' | grep -vP "^test.vcf$" | grep -vP "^test.vcf.gz$" | xargs rm
+#echo test.* | tr ' ' '\n' | grep -vP "^test.vcf$" | grep -vP "^test.vcf.gz$" | xargs rm

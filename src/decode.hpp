@@ -17,23 +17,15 @@
 
 namespace popvcf
 {
-//! Buffer size when decoding
-long constexpr DEC_BUFFER_SIZE{8 * 65536};
-
-//! Data type of an array buffer
-using Tdec_array_buf = std::array<char, DEC_BUFFER_SIZE>;
-
 class DecodeData
 {
 public:
-  std::size_t bytes_read{0};
-  std::size_t remaining_bytes{0};
-  std::size_t field{0};   // current vcf field
-  std::size_t b{0};       // begin index in buffer_in
-  std::size_t i{b};       // index in buffer_in
-  std::size_t o{0};       // output index
+  std::size_t field{0};   //!< Current vcf field
+  std::size_t in_size{0}; //!< Size of input buffer.
+  std::size_t b{0};       //!< Field begin index in input buffer.
+  std::size_t i{b};       //!< Curent index in input buffer
   bool header_line{true}; //!< True iff in header line
-  bool in_region{true};
+  bool in_region{true};   //!< True iff in region
 
   int64_t pos{-1};
   int64_t begin{-1};
@@ -58,20 +50,34 @@ public:
     map_to_unique_fields.clear();
   }
 
-  inline uint32_t num_unique_fields()
+  inline uint32_t num_unique_fields() const
   {
     return unique_fields.size();
   }
 };
 
+template <typename Tbuffer_in>
+inline void set_input_size(Tbuffer_in & buffer_in, DecodeData & dd)
+{
+  dd.in_size = buffer_in.size();
+}
+
+template <>
+inline void set_input_size(Tdec_array_buf & /*buffer_in*/, DecodeData & /*dd*/)
+{
+  // Do nothing.
+  // NOTE: dd.in_size must be set prior to calling decode_buffer in arrays
+}
+
 //! Decodes an input buffer. Output is written in \a buffer_out .
-template <typename Tbuffer_out, typename Tbuffer_in>
+template <bool is_region, typename Tbuffer_out, typename Tbuffer_in>
 inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, DecodeData & dd)
 {
+  set_input_size(buffer_in, dd);
   std::size_t constexpr N_FIELDS_SITE_DATA{9};
 
   // inner loop - Loops over each character in the input buffer
-  while (dd.i < (dd.bytes_read + dd.remaining_bytes))
+  while (dd.i < dd.in_size)
   {
     char const b_in = buffer_in[dd.i];
 
@@ -88,7 +94,11 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
     else if (dd.header_line == false && dd.field == 1)
     {
       std::from_chars(&buffer_in[dd.b], &buffer_in[dd.i], dd.pos); // get pos
-      dd.in_region = dd.pos >= dd.begin && dd.pos <= dd.end;
+
+      if constexpr (is_region)
+      {
+        dd.in_region = dd.pos >= dd.begin && dd.pos <= dd.end;
+      }
     }
 
     if (dd.header_line || dd.field < N_FIELDS_SITE_DATA)
@@ -96,8 +106,8 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
       // write field without any encoding
       ++dd.i; // adds '\t' or '\n'
 
-      if (dd.in_region)
-        std::copy(&buffer_in[dd.b], &buffer_in[dd.i], std::back_inserter(buffer_out));
+      if (!is_region || dd.in_region)
+        buffer_out.insert(buffer_out.end(), &buffer_in[dd.b], &buffer_in[dd.i]);
     }
     else
     {
@@ -128,9 +138,9 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
 
         ++dd.i;
 
-        if (dd.in_region)
+        if (!is_region || dd.in_region)
         {
-          std::copy(prior_field.begin(), prior_field.end(), std::back_inserter(buffer_out));
+          buffer_out.insert(buffer_out.end(), prior_field.begin(), prior_field.end());
           buffer_out.push_back(b_in);
         }
       }
@@ -143,12 +153,12 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         std::string const & prior_field = dd.prev_unique_fields[prev_unique_index];
 
         dd.map_to_unique_fields.insert(std::pair<std::string, uint32_t>(prior_field, dd.num_unique_fields()));
-        dd.field2uid.push_back(dd.unique_fields.size());
+        dd.field2uid.push_back(dd.num_unique_fields());
         dd.unique_fields.push_back(prior_field);
 
-        if (dd.in_region)
+        if (!is_region || dd.in_region)
         {
-          std::copy(prior_field.begin(), prior_field.end(), std::back_inserter(buffer_out));
+          buffer_out.insert(buffer_out.end(), prior_field.begin(), prior_field.end());
           buffer_out.push_back(b_in);
         }
       }
@@ -160,9 +170,9 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         dd.field2uid.push_back(unique_index);
         std::string const & prior_field = dd.unique_fields[unique_index];
 
-        if (dd.in_region)
+        if (!is_region || dd.in_region)
         {
-          std::copy(prior_field.begin(), prior_field.end(), std::back_inserter(buffer_out));
+          buffer_out.insert(buffer_out.end(), prior_field.begin(), prior_field.end());
           buffer_out.push_back(b_in);
         }
       }
@@ -179,8 +189,8 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         dd.unique_fields.push_back(insert_it.first->first);
         ++dd.i;
 
-        if (dd.in_region)
-          std::copy(&buffer_in[dd.b], &buffer_in[dd.i], std::back_inserter(buffer_out));
+        if (!is_region || dd.in_region)
+          buffer_out.insert(buffer_out.end(), &buffer_in[dd.b], &buffer_in[dd.i]);
       }
 
       assert((field_idx + 1) == static_cast<long>(dd.field2uid.size()));
@@ -196,10 +206,11 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
   } // ends inner loop
 
   // write data to the beginning of the input buffer
-  dd.remaining_bytes = dd.i - dd.b;
-  std::copy(&buffer_in[dd.b], &buffer_in[dd.b + dd.remaining_bytes], &buffer_in[0]);
+  std::copy(&buffer_in[dd.b], &buffer_in[dd.i], &buffer_in[0]);
+  dd.i = dd.i - dd.b;
   dd.b = 0;
-  dd.i = dd.remaining_bytes;
+  dd.in_size = dd.i;
+  resize_input_buffer(buffer_in, dd.i);
 }
 
 //! Decode an encoded popVCF
