@@ -24,14 +24,12 @@ public:
 
   std::string prev_contig{};
   int64_t prev_pos{0};
-  uint32_t prev_num_unique_fields{};
   std::vector<std::string> prev_unique_fields{};
   std::vector<uint32_t> prev_field2uid{};
   phmap::flat_hash_map<std::string, uint32_t> prev_map_to_unique_fields{};
 
   std::string contig{};
   int64_t pos{0};
-  uint32_t num_unique_fields{};
   std::vector<std::string> unique_fields{};
   std::vector<uint32_t> field2uid{};
   phmap::flat_hash_map<std::string, uint32_t> map_to_unique_fields{};
@@ -44,7 +42,6 @@ public:
     {
       std::swap(prev_contig, contig);
       prev_pos = pos;
-      prev_num_unique_fields = num_unique_fields;
       std::swap(prev_unique_fields, unique_fields);
       std::swap(prev_field2uid, field2uid);
       std::swap(prev_map_to_unique_fields, map_to_unique_fields);
@@ -52,7 +49,6 @@ public:
 
     contig.resize(0);
     pos = 0;
-    num_unique_fields = 0;
     unique_fields.resize(0);
     field2uid.resize(0);
     map_to_unique_fields.clear(); // clear map every line
@@ -103,14 +99,15 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
         ed.contig = std::string(&buffer_in[ed.b], ed.i - ed.b);
       }
     }
-    else if (ed.header_line == false && ed.field == 1)
+    else if (not ed.header_line && ed.field == 1)
     {
       std::from_chars(&buffer_in[ed.b], &buffer_in[ed.i], ed.pos);
 
       if (ed.contig != ed.prev_contig || (ed.pos / 10000) != (ed.prev_pos / 10000))
       {
         // previous line is not available
-        ed.prev_num_unique_fields = 0;
+        ed.prev_unique_fields.resize(0);
+        ed.prev_field2uid.resize(0);
         ed.prev_map_to_unique_fields.clear();
       }
     }
@@ -129,7 +126,7 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
       auto insert_it = ed.map_to_unique_fields.insert(
         std::pair<std::string, uint32_t>(std::piecewise_construct,
                                          std::forward_as_tuple(&buffer_in[ed.b], ed.i - ed.b),
-                                         std::forward_as_tuple(ed.num_unique_fields)));
+                                         std::forward_as_tuple(ed.unique_fields.size())));
 
       long const field_idx = ed.field - N_FIELDS_SITE_DATA;
       assert(field_idx == static_cast<long>(ed.field2uid.size()));
@@ -137,10 +134,7 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
       if (insert_it.second == true)
       {
         ed.field2uid.push_back(ed.unique_fields.size());
-        ++ed.num_unique_fields; // unique field
         ed.unique_fields.emplace_back(&buffer_in[ed.b], ed.i - ed.b);
-
-        assert(ed.num_unique_fields == static_cast<long>(ed.unique_fields.size()));
 
         if (field_idx < static_cast<long>(ed.prev_field2uid.size()) &&
             ed.prev_unique_fields[ed.prev_field2uid[field_idx]] == ed.unique_fields[insert_it.first->second])
