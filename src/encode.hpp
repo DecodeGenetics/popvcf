@@ -30,25 +30,39 @@ public:
 
   std::string contig{};
   int64_t pos{0};
+  int32_t n_alt{-1};
   std::vector<std::string> unique_fields{};
   std::vector<uint32_t> field2uid{};
   phmap::flat_hash_map<std::string, uint32_t> map_to_unique_fields{};
 
-  inline void clear_line()
-  {
-    field = 0; // reset field index
+  std::string next_contig{};
+  int64_t next_pos{0};
 
+  inline void clear_line(std::string && next_contig, int64_t next_pos, int32_t next_n_alt)
+  {
     if (not no_previous_line)
     {
-      std::swap(prev_contig, contig);
-      prev_pos = pos;
-      std::swap(prev_unique_fields, unique_fields);
-      std::swap(prev_field2uid, field2uid);
-      std::swap(prev_map_to_unique_fields, map_to_unique_fields);
+      if (next_contig != prev_contig || (next_pos / 10000) != (prev_pos / 10000))
+      {
+        // previous line is not available
+        prev_unique_fields.resize(0);
+        prev_field2uid.resize(0);
+        prev_map_to_unique_fields.clear();
+      }
+
+      if (next_n_alt == n_alt)
+      {
+        std::swap(prev_contig, contig);
+        prev_pos = pos;
+        std::swap(prev_unique_fields, unique_fields);
+        std::swap(prev_field2uid, field2uid);
+        std::swap(prev_map_to_unique_fields, map_to_unique_fields);
+      }
     }
 
-    contig.resize(0);
-    pos = 0;
+    contig = std::move(next_contig);
+    pos = next_pos;
+    n_alt = next_n_alt;
     unique_fields.resize(0);
     field2uid.resize(0);
     map_to_unique_fields.clear(); // clear map every line
@@ -75,6 +89,8 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
   set_input_size(buffer_in, ed);
   buffer_out.reserve(ENC_BUFFER_SIZE);
   std::size_t constexpr N_FIELDS_SITE_DATA{9}; // how many fields of the VCF contains site data
+  std::string next_contig{};
+  int64_t next_pos{0};
 
   while (ed.i < ed.in_size)
   {
@@ -86,29 +102,24 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
       continue; // we are in a vcf field
     }
 
-    if (ed.field == 0)
+    if (ed.field == 0) /*CHROM field*/
     {
       // check if in header line and store contig
-      if (buffer_in[ed.b] == '#')
-      {
-        ed.header_line = true;
-      }
-      else
-      {
-        ed.header_line = false;
-        ed.contig = std::string(&buffer_in[ed.b], ed.i - ed.b);
-      }
-    }
-    else if (not ed.header_line && ed.field == 1)
-    {
-      std::from_chars(&buffer_in[ed.b], &buffer_in[ed.i], ed.pos);
+      ed.header_line = buffer_in[ed.b] == '#'; // check if in header line
 
-      if (ed.contig != ed.prev_contig || (ed.pos / 10000) != (ed.prev_pos / 10000))
+      if (not ed.header_line)
+        next_contig.assign(&buffer_in[ed.b], ed.i - ed.b);
+    }
+    else if (not ed.header_line)
+    {
+      if (ed.field == 1) /*POS field*/
       {
-        // previous line is not available
-        ed.prev_unique_fields.resize(0);
-        ed.prev_field2uid.resize(0);
-        ed.prev_map_to_unique_fields.clear();
+        std::from_chars(&buffer_in[ed.b], &buffer_in[ed.i], next_pos);
+      }
+      else if (ed.field == 4) /*ALT field*/
+      {
+        int32_t next_n_alt = std::count(&buffer_in[ed.b], &buffer_in[ed.i], ',');
+        ed.clear_line(std::move(next_contig), next_pos, next_n_alt);
       }
     }
 
@@ -140,8 +151,7 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
             ed.prev_unique_fields[ed.prev_field2uid[field_idx]] == ed.unique_fields[insert_it.first->second])
         {
           /* Case 0: unique and same as above. */
-          buffer_out.push_back('$');
-          buffer_out.push_back(buffer_in[ed.i]);
+          buffer_out.insert(buffer_out.end(), {'$', buffer_in[ed.i]});
           ++ed.i;
         }
         else
@@ -173,8 +183,7 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
             ed.prev_unique_fields[ed.prev_field2uid[field_idx]] == ed.unique_fields[insert_it.first->second])
         {
           /* Case 3: Field is not unique and same has the field above. */
-          buffer_out.push_back('&');
-          buffer_out.push_back(buffer_in[ed.i]);
+          buffer_out.insert(buffer_out.end(), {'&', buffer_in[ed.i]});
           ++ed.i;
         }
         else
@@ -195,7 +204,7 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
 
     // check if we need to clear line or increment field
     if (b_in == '\n')
-      ed.clear_line();
+      ed.field = 0; // reset field index
     else
       ++ed.field;
   } // ends inner loop

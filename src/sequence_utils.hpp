@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cassert>
+#include <charconv>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -86,19 +88,36 @@ inline uint32_t ascii_cstring_to_int(char const * b, char const * e)
 template <typename Tint, typename Tbuffer_out>
 inline void to_chars(Tint char_val, Tbuffer_out & buffer_out)
 {
+  std::size_t constexpr ARR_SIZE{6};
+  std::array<char, ARR_SIZE> a;
+  std::size_t i{0};
+
   while (char_val >= CHAR_SET_SIZE)
   {
-    auto rem = char_val % CHAR_SET_SIZE;
+    Tint rem = char_val % CHAR_SET_SIZE;
     char_val = char_val / CHAR_SET_SIZE;
-    buffer_out.push_back(int_to_ascii(rem));
+    assert(i < ARR_SIZE);
+    a[i++] = int_to_ascii(rem);
   }
 
   assert(char_val < CHAR_SET_SIZE);
-  buffer_out.push_back(int_to_ascii(char_val));
+  assert(i < ARR_SIZE);
+  a[i++] = int_to_ascii(char_val);
+  buffer_out.insert(buffer_out.end(), a.data(), a.data() + i);
 }
 
 template <typename Tstring>
 std::vector<std::string_view> split_string(Tstring const & str, char const delimiter);
+
+template <typename Tit>
+long get_vcf_pos(Tit begin, Tit end)
+{
+  auto find_it1 = std::find(begin, end, '\t');
+  auto find_it2 = std::find(find_it1 + 1, end, '\t');
+  long vcf_pos{0};
+  std::from_chars(find_it1 + 1, find_it2, vcf_pos);
+  return vcf_pos;
+}
 
 template <typename Tbuffer_in>
 inline void resize_input_buffer(Tbuffer_in & buffer_in, std::size_t const new_size)

@@ -3,6 +3,7 @@
 n=100000
 echo "##fileformat=VCFv4.2"
 echo "##contig=<ID=chr1>"
+echo "##contig=<ID=chr2>"
 echo "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype.\">"
 echo "##FORMAT=<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths.\">"
 echo "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"PHRED-scaled genotype likelihoods.\">"
@@ -17,12 +18,12 @@ awk -v n=${n} 'BEGIN{
 awk -v n=${n} -v n_alts=3 'BEGIN{
   alt="AC"
   printf "\nchr1\t"n+2
-  printf "\t.\tA"
+  printf "\t.\tA\tA"
   for (a = 1; a <= n_alts; a++){
     alt=alt"C"
     printf ","alt
   }
-  printf "\t0\t.\t.\t.\tGT:AD:PL"
+  printf "\t0\t.\t.\tGT:AD:PL"
   for (i = 1; i <= n; i++){
     printf "\t0/0:"n_alts*10
     for (a = 1; a <= n_alts; a++){
@@ -40,12 +41,12 @@ awk -v n=${n} -v n_alts=3 'BEGIN{
 awk -v n=${n} -v n_alts=3 'BEGIN{
   alt="AC"
   printf "chr1\t"n+2
-  printf "\t.\tA"
+  printf "\t.\tA\tA"
   for (a = 1; a <= n_alts; a++){
     alt=alt"C"
     printf ","alt
   }
-  printf "\t0\t.\t.\t.\tGT:AD:PL"
+  printf "\t0\t.\t.\tGT:AD:PL"
   for (i = 1; i <= n; i++){
     printf "\t0/0:"n_alts*10
     for (a = 1; a <= n_alts; a++){
@@ -63,12 +64,12 @@ awk -v n=${n} -v n_alts=3 'BEGIN{
 awk -v n=${n} -v n_alts=3 'BEGIN{
   alt="AC"
   printf "chr1\t"n+2
-  printf "\t.\tA"
+  printf "\t.\tA\tA"
   for (a = 1; a <= n_alts; a++){
     alt=alt"C"
     printf ","alt
   }
-  printf "\t0\t.\t.\t.\tGT:AD:PL"
+  printf "\t0\t.\t.\tGT:AD:PL"
   for (i = 1; i <= n; i++){
     printf "\t0/0:"n_alts*10
     for (a = 1; a <= n_alts; a++){
@@ -87,12 +88,12 @@ awk -v n=${n} -v n_alts=3 'BEGIN{
 awk -v n=${n} -v n_alts=7 'BEGIN{
   alt="GT"
   printf "chr1\t"n+3
-  printf "\t.\tG"
+  printf "\t.\tG\tG"
   for (a = 1; a <= n_alts; a++){
     alt=alt"T"
     printf ","alt
   }
-  printf "\t0\t.\t.\t.\tGT:AD:PL"
+  printf "\t0\t.\t.\tGT:AD:PL"
   for (i = 1; i <= n; i++){
     printf "\t0/0:"n_alts*10
     for (a = 1; a <= n_alts; a++){
@@ -104,5 +105,33 @@ awk -v n=${n} -v n_alts=7 'BEGIN{
         printf ","a+i+b-2
       }
     }
+  }
+  printf "\n"}'
+
+awk -v n=${n} 'BEGIN{
+  printf "chr2\t9999\t.\tGTTTTTTT\tG\t0\t.\t.\tGT"
+  for (i = 1; i <= n; i++){
+    printf "\t0/0"
+  }
+  printf "\n"}'
+
+awk -v n=${n} 'BEGIN{
+  printf "chr2\t10000\t.\tGTTTTTTT\tG\t0\t.\t.\tGT"
+  for (i = 1; i <= n; i++){
+    printf "\t0/0"
+  }
+  printf "\n"}'
+
+awk -v n=${n} 'BEGIN{
+  printf "chr2\t10001\t.\tGTTTTTTT\tG\t0\t.\t.\tGT"
+  for (i = 1; i <= n; i++){
+    printf "\t0/0"
+  }
+  printf "\n"}'
+
+awk -v n=${n} 'BEGIN{
+  printf "chr2\t1000000\t.\tGTTTTTTT\tG\t0\t.\t.\tGT"
+  for (i = 1; i <= n; i++){
+    printf "\t0/0"
   }
   printf "\n"}'
