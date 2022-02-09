@@ -22,8 +22,8 @@ set (STATIC_DIR "" CACHE STRING "Build in 'static' mode and include libraries in
 ## popvcf ##
 ############
 set (popvcf_VERSION_MAJOR 1)
-set (popvcf_VERSION_MINOR 0)
-set (popvcf_VERSION_PATCH 1)
+set (popvcf_VERSION_MINOR 1)
+set (popvcf_VERSION_PATCH 0)
 
 add_subdirectory(src) # Exposes "popvcf_sources", which contains all source files of popvcf
 add_library(popvcf_objects OBJECT ${popvcf_sources})

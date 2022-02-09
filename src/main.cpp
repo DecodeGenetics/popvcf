@@ -18,9 +18,8 @@ int subcmd_encode(paw::Parser & parser)
   std::string output_fn{"-"};
   std::string output_mode{"w"};
   std::string output_type{"v"};
-  int output_compression_level{-1};
+  int output_compress_level{-1};
   int compression_threads{1};
-  bool no_previous_line{false};
 
   try
   {
@@ -28,24 +27,25 @@ int subcmd_encode(paw::Parser & parser)
                                      "VCF",
                                      "Encode this VCF (or VCF.gz). If not set, read VCF from standard input.");
 
-    parser.parse_option(compression_threads, '@', "threads", "Output file compression level.", "INT");
+    parser.parse_option(compression_threads,
+                        '@',
+                        "threads",
+                        "Number of output file compression threads (only used if output type is \"z\").",
+                        "NUM");
+
     parser.parse_option(input_type,
                         'I',
                         "input-type",
                         "Input type. v uncompressed VCF, z bgzipped VCF, g guess based on filename.",
                         "v|z|g");
 
-    parser.parse_option(no_previous_line,
-                        ' ',
-                        "no-previous-line",
-                        "Set to skip using previous line. Makes the output work with normal tabix queries.");
+    parser.parse_option(output_fn,
+                        'o',
+                        "output",
+                        "Output will be written to this path. If '-', then write instead to standard output.",
+                        "output.vcf[.gz]");
 
-    parser.parse_option(output_fn, 'o', "output", "VCF.gz", "Output filename.");
-    parser.parse_option(output_compression_level,
-                        'l',
-                        "output-compress-level",
-                        "Output file compression level.",
-                        "INT");
+    parser.parse_option(output_compress_level, 'l', "output-compress-level", "Output file compression level.", "LEVEL");
 
     parser.parse_option(output_type, 'O', "output-type", "Output type. v uncompressed VCF, z bgzipped VCF.", "v|z");
     parser.finalize();
@@ -55,21 +55,15 @@ int subcmd_encode(paw::Parser & parser)
     output_fn = "-";
   }
 
-  if (output_compression_level >= 0)
-    output_mode += std::to_string(std::min(9, output_compression_level));
+  if (output_compress_level >= 0)
+    output_mode += std::to_string(std::min(9, output_compress_level));
 
   long const n = vcf_fn.size();
 
   if (n > 3 && vcf_fn[n - 2] == 'g' && vcf_fn[n - 1] == 'z')
     input_type = "z";
 
-  encode_file(vcf_fn,
-              input_type == "z",
-              output_fn,
-              output_mode,
-              output_type == "z",
-              compression_threads,
-              no_previous_line);
+  encode_file(vcf_fn, input_type == "z", output_fn, output_mode, output_type == "z", compression_threads);
   return 0;
 }
 

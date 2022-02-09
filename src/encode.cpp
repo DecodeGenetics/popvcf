@@ -22,13 +22,11 @@ void encode_file(std::string const & input_fn,
                  std::string const & output_fn,
                  std::string const & output_mode,
                  bool const is_bgzf_output,
-                 int const compression_threads,
-                 bool const no_previous_line)
+                 int const compression_threads)
 {
   Tenc_array_buf buffer_in;     // input buffer
   std::vector<char> buffer_out; // output buffer
   EncodeData ed;                // encode data struct
-  ed.no_previous_line = no_previous_line;
 
   /// Open input file streams
   popvcf::bgzf_ptr in_bgzf(nullptr, popvcf::close_bgzf);   // bgzf input stream

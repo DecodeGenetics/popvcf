@@ -5,6 +5,7 @@
 #include <cassert>
 #include <charconv>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <string>
 #include <vector>
@@ -74,6 +75,7 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
 {
   set_input_size(buffer_in, dd);
   std::size_t constexpr N_FIELDS_SITE_DATA{9};
+  std::string next_contig{};
 
   // inner loop - Loops over each character in the input buffer
   while (dd.i < dd.in_size)
@@ -89,14 +91,28 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
     if (dd.field == 0)
     {
       dd.header_line = buffer_in[dd.b] == '#'; // check if in header line
+
+      if (not dd.header_line)
+      {
+        ++dd.i; // include '\t'
+        next_contig.assign(&buffer_in[dd.b], dd.i - dd.b);
+
+        /// Do not print this line until we know if we are inside the region or not
+        dd.b = dd.i;
+        ++dd.field;
+        continue;
+      }
     }
     else if (not dd.header_line)
     {
-      if (is_region && dd.field == 1) /*POS field */
+      if (dd.field == 1) /*POS field */
       {
-        uint32_t pos{};
+        long pos{};
         std::from_chars(&buffer_in[dd.b], &buffer_in[dd.i], pos); // get pos
-        dd.in_region = static_cast<int64_t>(pos) >= dd.begin && static_cast<int64_t>(pos) <= dd.end;
+        dd.in_region = pos >= dd.begin && pos <= dd.end;
+
+        if (!is_region || dd.in_region) /*print contig if we are inside the region*/
+          buffer_out.insert(buffer_out.end(), next_contig.begin(), next_contig.end());
       }
       else if (dd.field == 4) /* ALT field */
       {
@@ -115,11 +131,12 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
     }
     else
     {
-      long const field_idx = dd.field - N_FIELDS_SITE_DATA;
+      long field_idx = dd.field - N_FIELDS_SITE_DATA;
       assert(field_idx == static_cast<long>(dd.field2uid.size()));
 
-      if (buffer_in[dd.b] == '$' || buffer_in[dd.b] == '&')
+      while (buffer_in[dd.b] == '$' || buffer_in[dd.b] == '&')
       {
+        assert(dd.b < dd.i);
         assert(field_idx < static_cast<long>(dd.prev_field2uid.size()));
         assert(dd.prev_field2uid[field_idx] < static_cast<long>(dd.prev_unique_fields.size()));
 
@@ -135,18 +152,31 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         else
         {
           /* Duplicate field in this line. Same as field above. */
+          assert(buffer_in[dd.b] == '&');
           auto find_it = dd.map_to_unique_fields.find(prior_field);
           assert(find_it != dd.map_to_unique_fields.end());
           dd.field2uid.push_back(find_it->second);
         }
 
-        ++dd.i;
+        ++dd.b;
+        ++dd.field;
+        ++field_idx;
 
         if (!is_region || dd.in_region)
         {
           buffer_out.insert(buffer_out.end(), prior_field.begin(), prior_field.end());
-          buffer_out.push_back(b_in);
+
+          if (dd.b < dd.i)
+            buffer_out.push_back('\t');
         }
+      }
+
+      if (buffer_in[dd.b] == '\n')
+      {
+        if (!is_region || dd.in_region)
+          buffer_out.push_back('\n');
+
+        ++dd.i;
       }
       else if (buffer_in[dd.b] == '%')
       {
@@ -197,7 +227,7 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
           buffer_out.insert(buffer_out.end(), &buffer_in[dd.b], &buffer_in[dd.i]);
       }
 
-      assert((field_idx + 1) == static_cast<long>(dd.field2uid.size()));
+      // assert((field_idx + 1) == static_cast<long>(dd.field2uid.size()));
     }
 
     assert(b_in == buffer_in[dd.i - 1]);

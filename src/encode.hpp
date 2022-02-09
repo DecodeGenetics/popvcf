@@ -15,19 +15,18 @@ namespace popvcf
 class EncodeData
 {
 public:
-  std::size_t field{0};         //!< current vcf field.
-  std::size_t in_size{0};       //!< Size of inut buffer.
-  std::size_t b{0};             //!< begin index in buffer_in
-  std::size_t i{b};             //!< index in buffer_in
-  bool header_line{true};       //!< True iff in header line
-  bool no_previous_line{false}; //!< Set to skip using previous line
+  std::size_t field{0};   //!< current vcf field.
+  std::size_t in_size{0}; //!< Size of inut buffer.
+  std::size_t b{0};       //!< begin index in buffer_in
+  std::size_t i{b};       //!< index in buffer_in
+  bool header_line{true}; //!< True iff in header line
 
-  std::string prev_contig{};
-  int64_t prev_pos{0};
+  /* Data fields from previous line. */
   std::vector<std::string> prev_unique_fields{};
   std::vector<uint32_t> prev_field2uid{};
   phmap::flat_hash_map<std::string, uint32_t> prev_map_to_unique_fields{};
 
+  /* Data fields from current line. */
   std::string contig{};
   int64_t pos{0};
   int32_t n_alt{-1};
@@ -35,37 +34,34 @@ public:
   std::vector<uint32_t> field2uid{};
   phmap::flat_hash_map<std::string, uint32_t> map_to_unique_fields{};
 
+  /* Data fields for the next line. */
   std::string next_contig{};
   int64_t next_pos{0};
 
   inline void clear_line(std::string && next_contig, int64_t next_pos, int32_t next_n_alt)
   {
-    if (not no_previous_line)
+    if (next_contig != contig || (next_pos / 10000) != (pos / 10000))
     {
-      if (next_contig != prev_contig || (next_pos / 10000) != (prev_pos / 10000))
-      {
-        // previous line is not available
-        prev_unique_fields.resize(0);
-        prev_field2uid.resize(0);
-        prev_map_to_unique_fields.clear();
-      }
-
-      if (next_n_alt == n_alt)
-      {
-        std::swap(prev_contig, contig);
-        prev_pos = pos;
-        std::swap(prev_unique_fields, unique_fields);
-        std::swap(prev_field2uid, field2uid);
-        std::swap(prev_map_to_unique_fields, map_to_unique_fields);
-      }
+      /// Previous line is not available, clear values
+      prev_unique_fields.resize(0);
+      prev_field2uid.resize(0);
+      prev_map_to_unique_fields.clear();
+    }
+    else if (next_n_alt == n_alt)
+    {
+      /// Only swap out from this line if we have the same amount of alts
+      std::swap(prev_unique_fields, unique_fields);
+      std::swap(prev_field2uid, field2uid);
+      std::swap(prev_map_to_unique_fields, map_to_unique_fields);
     }
 
+    /// Clear data from this line for the next
     contig = std::move(next_contig);
     pos = next_pos;
     n_alt = next_n_alt;
     unique_fields.resize(0);
     field2uid.resize(0);
-    map_to_unique_fields.clear(); // clear map every line
+    map_to_unique_fields.clear();
   }
 };
 
@@ -76,7 +72,7 @@ inline void set_input_size(Tbuffer_in & buffer_in, EncodeData & ed)
 }
 
 template <>
-inline void set_input_size(Tenc_array_buf & /*buffer_in*/, EncodeData & /*dd*/)
+inline void set_input_size(Tenc_array_buf & /*buffer_in*/, EncodeData & /*ed*/)
 {
   // Do nothing.
   // NOTE: dd.in_size must be set prior to calling decode_buffer in arrays
@@ -151,7 +147,11 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
             ed.prev_unique_fields[ed.prev_field2uid[field_idx]] == ed.unique_fields[insert_it.first->second])
         {
           /* Case 0: unique and same as above. */
-          buffer_out.insert(buffer_out.end(), {'$', buffer_in[ed.i]});
+          buffer_out.push_back('$');
+
+          if (b_in == '\n') /* never skip newline */
+            buffer_out.push_back('\n');
+
           ++ed.i;
         }
         else
@@ -183,7 +183,11 @@ inline void encode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Enco
             ed.prev_unique_fields[ed.prev_field2uid[field_idx]] == ed.unique_fields[insert_it.first->second])
         {
           /* Case 3: Field is not unique and same has the field above. */
-          buffer_out.insert(buffer_out.end(), {'&', buffer_in[ed.i]});
+          buffer_out.push_back('&');
+
+          if (b_in == '\n') /* never skip newline */
+            buffer_out.push_back('\n');
+
           ++ed.i;
         }
         else
@@ -223,7 +227,6 @@ void encode_file(std::string const & input_fn,
                  std::string const & output_fn,
                  std::string const & output_mode,
                  bool const is_bgzf_output,
-                 int const compression_threads,
-                 bool const no_previous_line);
+                 int const compression_threads);
 
 } // namespace popvcf

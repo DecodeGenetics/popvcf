@@ -169,7 +169,9 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
 
   while (ret > 0)
   {
-    if (get_vcf_pos(str.s, str.s + str.l) >= safe_begin)
+    long vcf_pos = get_vcf_pos(str.s, str.s + str.l);
+
+    if (vcf_pos >= safe_begin)
     {
       buffer_in.insert(buffer_in.end(), str.s, str.s + str.l);
       buffer_in.push_back('\n');
@@ -183,7 +185,7 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
       buffer_out.resize(0);
 
       /// Check if end position has been passed
-      if (not dd.in_region)
+      if (vcf_pos > dd.end)
         break;
     }
 
