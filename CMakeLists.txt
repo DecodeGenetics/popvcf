@@ -22,8 +22,8 @@ set (STATIC_DIR "" CACHE STRING "Build in 'static' mode and include libraries in
 ## popvcf ##
 ############
 set (popvcf_VERSION_MAJOR 1)
-set (popvcf_VERSION_MINOR 0)
-set (popvcf_VERSION_PATCH 1)
+set (popvcf_VERSION_MINOR 1)
+set (popvcf_VERSION_PATCH 0)
 
 add_subdirectory(src) # Exposes "popvcf_sources", which contains all source files of popvcf
 add_library(popvcf_objects OBJECT ${popvcf_sources})
@@ -238,6 +238,9 @@ endif()
 
 enable_testing(true)
 add_test(NAME test_popvcf COMMAND sh -c "set -e; sh ${CMAKE_CURRENT_SOURCE_DIR}/test/create_test_data.sh > test.vcf ; ${CMAKE_CURRENT_BINARY_DIR}/popvcf encode test.vcf -Oz > test.popvcf.gz ; ${CMAKE_CURRENT_BINARY_DIR}/popvcf decode test.popvcf.gz > test.new.vcf ; diff test.vcf test.new.vcf")
+
+# TODO add tabix to workflow or make popvcf build the index
+# tabix -p vcf test.popvcf.gz ; ${CMAKE_CURRENT_BINARY_DIR}/popvcf decode test.popvcf.gz --region=chr2:10000-10200 | grep -v ^# | wc -l | grep -q -w -F 2
 
 set_tests_properties(test_popvcf PROPERTIES DEPENDS popvcf)
 

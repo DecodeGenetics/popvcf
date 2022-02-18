@@ -5,6 +5,7 @@
 #include <cassert>
 #include <charconv>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <string>
 #include <vector>
@@ -27,7 +28,6 @@ public:
   bool header_line{true}; //!< True iff in header line
   bool in_region{true};   //!< True iff in region
 
-  int64_t pos{-1};
   int64_t begin{-1};
   int64_t end{std::numeric_limits<int64_t>::max()};
 
@@ -35,24 +35,24 @@ public:
   std::vector<std::string> prev_unique_fields{};
   phmap::flat_hash_map<std::string, uint32_t> prev_map_to_unique_fields{};
 
+  int32_t n_alt{-1};
   std::vector<uint32_t> field2uid{};
   std::vector<std::string> unique_fields{};
   phmap::flat_hash_map<std::string, uint32_t> map_to_unique_fields{};
 
-  inline void clear_line()
+  inline void clear_line(int32_t next_n_alt)
   {
-    field = 0;
-    std::swap(prev_field2uid, field2uid);
-    std::swap(prev_unique_fields, unique_fields);
-    std::swap(prev_map_to_unique_fields, map_to_unique_fields);
+    if (next_n_alt == n_alt)
+    {
+      std::swap(prev_field2uid, field2uid);
+      std::swap(prev_unique_fields, unique_fields);
+      std::swap(prev_map_to_unique_fields, map_to_unique_fields);
+    }
+
+    n_alt = next_n_alt;
     field2uid.resize(0);
     unique_fields.resize(0);
     map_to_unique_fields.clear();
-  }
-
-  inline uint32_t num_unique_fields() const
-  {
-    return unique_fields.size();
   }
 };
 
@@ -75,6 +75,7 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
 {
   set_input_size(buffer_in, dd);
   std::size_t constexpr N_FIELDS_SITE_DATA{9};
+  std::string next_contig{};
 
   // inner loop - Loops over each character in the input buffer
   while (dd.i < dd.in_size)
@@ -90,14 +91,33 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
     if (dd.field == 0)
     {
       dd.header_line = buffer_in[dd.b] == '#'; // check if in header line
-    }
-    else if (dd.header_line == false && dd.field == 1)
-    {
-      std::from_chars(&buffer_in[dd.b], &buffer_in[dd.i], dd.pos); // get pos
 
-      if constexpr (is_region)
+      if (not dd.header_line)
       {
-        dd.in_region = dd.pos >= dd.begin && dd.pos <= dd.end;
+        ++dd.i; // include '\t'
+        next_contig.assign(&buffer_in[dd.b], dd.i - dd.b);
+
+        /// Do not print this line until we know if we are inside the region or not
+        dd.b = dd.i;
+        ++dd.field;
+        continue;
+      }
+    }
+    else if (not dd.header_line)
+    {
+      if (dd.field == 1) /*POS field */
+      {
+        long pos{};
+        std::from_chars(&buffer_in[dd.b], &buffer_in[dd.i], pos); // get pos
+        dd.in_region = pos >= dd.begin && pos <= dd.end;
+
+        if (!is_region || dd.in_region) /*print contig if we are inside the region*/
+          buffer_out.insert(buffer_out.end(), next_contig.begin(), next_contig.end());
+      }
+      else if (dd.field == 4) /* ALT field */
+      {
+        int32_t next_n_alt = std::count(&buffer_in[dd.b], &buffer_in[dd.i], ',');
+        dd.clear_line(next_n_alt);
       }
     }
 
@@ -111,11 +131,12 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
     }
     else
     {
-      long const field_idx = dd.field - N_FIELDS_SITE_DATA;
+      long field_idx = dd.field - N_FIELDS_SITE_DATA;
       assert(field_idx == static_cast<long>(dd.field2uid.size()));
 
-      if (buffer_in[dd.b] == '$' || buffer_in[dd.b] == '&')
+      while (buffer_in[dd.b] == '$' || buffer_in[dd.b] == '&')
       {
+        assert(dd.b < dd.i);
         assert(field_idx < static_cast<long>(dd.prev_field2uid.size()));
         assert(dd.prev_field2uid[field_idx] < static_cast<long>(dd.prev_unique_fields.size()));
 
@@ -124,25 +145,38 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         if (buffer_in[dd.b] == '$')
         {
           /* Unique field in this line. Same as field above. */
-          dd.map_to_unique_fields.insert(std::pair<std::string, uint32_t>(prior_field, dd.num_unique_fields()));
-          dd.field2uid.push_back(dd.num_unique_fields());
+          dd.map_to_unique_fields.insert(std::pair<std::string, uint32_t>(prior_field, dd.unique_fields.size()));
+          dd.field2uid.push_back(dd.unique_fields.size());
           dd.unique_fields.push_back(prior_field);
         }
         else
         {
           /* Duplicate field in this line. Same as field above. */
+          assert(buffer_in[dd.b] == '&');
           auto find_it = dd.map_to_unique_fields.find(prior_field);
           assert(find_it != dd.map_to_unique_fields.end());
           dd.field2uid.push_back(find_it->second);
         }
 
-        ++dd.i;
+        ++dd.b;
+        ++dd.field;
+        ++field_idx;
 
         if (!is_region || dd.in_region)
         {
           buffer_out.insert(buffer_out.end(), prior_field.begin(), prior_field.end());
-          buffer_out.push_back(b_in);
+
+          if (dd.b < dd.i)
+            buffer_out.push_back('\t');
         }
+      }
+
+      if (buffer_in[dd.b] == '\n')
+      {
+        if (!is_region || dd.in_region)
+          buffer_out.push_back('\n');
+
+        ++dd.i;
       }
       else if (buffer_in[dd.b] == '%')
       {
@@ -152,8 +186,8 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         assert(prev_unique_index < dd.prev_unique_fields.size());
         std::string const & prior_field = dd.prev_unique_fields[prev_unique_index];
 
-        dd.map_to_unique_fields.insert(std::pair<std::string, uint32_t>(prior_field, dd.num_unique_fields()));
-        dd.field2uid.push_back(dd.num_unique_fields());
+        dd.map_to_unique_fields.insert(std::pair<std::string, uint32_t>(prior_field, dd.unique_fields.size()));
+        dd.field2uid.push_back(dd.unique_fields.size());
         dd.unique_fields.push_back(prior_field);
 
         if (!is_region || dd.in_region)
@@ -182,10 +216,10 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         auto insert_it = dd.map_to_unique_fields.insert(
           std::pair<std::string, uint32_t>(std::piecewise_construct,
                                            std::forward_as_tuple(&buffer_in[dd.b], dd.i - dd.b),
-                                           std::forward_as_tuple(dd.num_unique_fields())));
+                                           std::forward_as_tuple(dd.unique_fields.size())));
 
         assert(insert_it.second == true);
-        dd.field2uid.push_back(dd.num_unique_fields());
+        dd.field2uid.push_back(dd.unique_fields.size());
         dd.unique_fields.push_back(insert_it.first->first);
         ++dd.i;
 
@@ -193,14 +227,14 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
           buffer_out.insert(buffer_out.end(), &buffer_in[dd.b], &buffer_in[dd.i]);
       }
 
-      assert((field_idx + 1) == static_cast<long>(dd.field2uid.size()));
+      // assert((field_idx + 1) == static_cast<long>(dd.field2uid.size()));
     }
 
     assert(b_in == buffer_in[dd.i - 1]);
     dd.b = dd.i;
 
     if (b_in == '\n')
-      dd.clear_line();
+      dd.field = 0;
     else
       ++dd.field;
   } // ends inner loop

@@ -126,13 +126,19 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
 
   /// Determine the region to query
   std::string safe_region = chrom;
+  long safe_begin;
 
   if (begin >= 0)
   {
+    safe_begin = std::max(1l, (begin / 10000l) * 10000l);
     safe_region.push_back(':');
-    safe_region.append(std::to_string(std::max(1l, (begin / 10000l) * 10000l)));
+    safe_region.append(std::to_string(std::max(1l, safe_begin)));
     safe_region.push_back('-');
     safe_region.append(std::to_string(end));
+  }
+  else
+  {
+    safe_begin = 0;
   }
 
   /// Input streams
@@ -163,20 +169,25 @@ void decode_region(std::string const & popvcf_fn, std::string const & region)
 
   while (ret > 0)
   {
-    buffer_in.insert(buffer_in.end(), str.s, str.s + str.l);
-    buffer_in.push_back('\n');
+    long vcf_pos = get_vcf_pos(str.s, str.s + str.l);
 
-    decode_buffer</*in_region=*/true>(buffer_out, buffer_in, dd);
+    if (vcf_pos >= safe_begin)
+    {
+      buffer_in.insert(buffer_in.end(), str.s, str.s + str.l);
+      buffer_in.push_back('\n');
 
-    /// Write buffer_out to stdout
-    fwrite(buffer_out.data(), 1, buffer_out.size(), stdout);
+      decode_buffer</*in_region=*/true>(buffer_out, buffer_in, dd);
 
-    /// Clears output buffer, but does not deallocate
-    buffer_out.resize(0);
+      /// Write buffer_out to stdout
+      fwrite(buffer_out.data(), 1, buffer_out.size(), stdout);
 
-    /// Check if end position has been passed
-    if (dd.pos > dd.end)
-      break;
+      /// Clears output buffer, but does not deallocate
+      buffer_out.resize(0);
+
+      /// Check if end position has been passed
+      if (vcf_pos > dd.end)
+        break;
+    }
 
     /// Read more data
     ret = tbx_itr_next(in_bgzf.get(), in_tbx.get(), in_it.get(), &str);
