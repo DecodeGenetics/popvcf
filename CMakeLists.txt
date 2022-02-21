@@ -24,6 +24,7 @@ set (STATIC_DIR "" CACHE STRING "Build in 'static' mode and include libraries in
 set (popvcf_VERSION_MAJOR 1)
 set (popvcf_VERSION_MINOR 1)
 set (popvcf_VERSION_PATCH 0)
+set (popvcf_VERSION ${popvcf_VERSION_MAJOR}.${popvcf_VERSION_MINOR}.${popvcf_VERSION_PATCH})
 
 add_subdirectory(src) # Exposes "popvcf_sources", which contains all source files of popvcf
 add_library(popvcf_objects OBJECT ${popvcf_sources})
@@ -231,6 +232,15 @@ if(BUILD_DOCUMENTATION)
 
   #install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/html DESTINATION share/doc)
 endif()
+
+###########
+# ARCHIVE #
+###########
+add_custom_target(archive
+    COMMAND sh -c "bash .git-archive-all.sh --format tar.gz --prefix popvcf-v${popvcf_VERSION}/ ${CMAKE_CURRENT_BINARY_DIR}/popvcf-v${popvcf_VERSION}.tar.gz"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Generating API documentation with Doxygen"
+    VERBATIM)
 
 ###########
 # Testing #
