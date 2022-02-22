@@ -67,5 +67,10 @@ cmake ..
 make -j3 popvcf
 ```
 
+### Known limitations
+
+ * Each VCF genotype field is assumed to be no larger than the popVCF buffer size (256kb). Site data may exceed this limit though (i.e. the INFO field).
+ * Each VCF genotype field is assumed to start on a number (0-9), a period (.), or a dash (-). Any VCF record with a GT field fulfills this requirement. Subsequent characters can contain any other printable characters.
+
 ### License
 MIT

@@ -35,13 +35,18 @@ public:
   std::vector<std::string> prev_unique_fields{};
   phmap::flat_hash_map<std::string, uint32_t> prev_map_to_unique_fields{};
 
+  int32_t stored_alt{0};
   int32_t n_alt{-1};
+  std::string next_contig{};
   std::vector<uint32_t> field2uid{};
   std::vector<std::string> unique_fields{};
   phmap::flat_hash_map<std::string, uint32_t> map_to_unique_fields{};
 
   inline void clear_line(int32_t next_n_alt)
   {
+    next_n_alt += stored_alt;
+    stored_alt = 0;
+
     if (next_n_alt == n_alt)
     {
       std::swap(prev_field2uid, field2uid);
@@ -75,7 +80,6 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
 {
   set_input_size(buffer_in, dd);
   std::size_t constexpr N_FIELDS_SITE_DATA{9};
-  std::string next_contig{};
 
   // inner loop - Loops over each character in the input buffer
   while (dd.i < dd.in_size)
@@ -95,7 +99,7 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
       if (not dd.header_line)
       {
         ++dd.i; // include '\t'
-        next_contig.assign(&buffer_in[dd.b], dd.i - dd.b);
+        dd.next_contig.assign(&buffer_in[dd.b], dd.i - dd.b);
 
         /// Do not print this line until we know if we are inside the region or not
         dd.b = dd.i;
@@ -112,7 +116,7 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
         dd.in_region = pos >= dd.begin && pos <= dd.end;
 
         if (!is_region || dd.in_region) /*print contig if we are inside the region*/
-          buffer_out.insert(buffer_out.end(), next_contig.begin(), next_contig.end());
+          buffer_out.insert(buffer_out.end(), dd.next_contig.begin(), dd.next_contig.end());
       }
       else if (dd.field == 4) /* ALT field */
       {
@@ -239,9 +243,24 @@ inline void decode_buffer(Tbuffer_out & buffer_out, Tbuffer_in & buffer_in, Deco
       ++dd.field;
   } // ends inner loop
 
-  // write data to the beginning of the input buffer
-  std::copy(&buffer_in[dd.b], &buffer_in[dd.i], &buffer_in[0]);
-  dd.i = dd.i - dd.b;
+  if (dd.field >= 3 && dd.field < N_FIELDS_SITE_DATA)
+  {
+    // write field without updating the field index
+    if (!is_region || dd.in_region)
+      buffer_out.insert(buffer_out.end(), &buffer_in[dd.b], &buffer_in[dd.i]);
+
+    if (dd.field == 4) /*store the number of ALT alleles if we are in the ALT field*/
+      dd.stored_alt = std::count(&buffer_in[dd.b], &buffer_in[dd.i], ',');
+
+    dd.i = 0;
+  }
+  else
+  {
+    // write data to the beginning of the input buffer
+    std::copy(&buffer_in[dd.b], &buffer_in[dd.i], &buffer_in[0]);
+    dd.i = dd.i - dd.b;
+  }
+
   dd.b = 0;
   dd.in_size = dd.i;
   resize_input_buffer(buffer_in, dd.i);
